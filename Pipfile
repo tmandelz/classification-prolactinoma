@@ -1,0 +1,26 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+tqdm = "*"
+pillow = "*"
+ipython = "*"
+pytorch-lightning = "*"
+pandas = "*"
+numpy = "*"
+wandb = "*"
+torchvision = "*"
+sklearn = "*"
+scikit-learn = "*"
+matplotlib = "*"
+strenum = "*"
+jupyter-contrib-nbextensions = "*"
+seaborn = "*"
+
+[dev-packages]
+ipykernel = "*"
+
+[requires]
+python_version = "3"
