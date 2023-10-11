@@ -18,6 +18,7 @@ matplotlib = "*"
 strenum = "*"
 jupyter-contrib-nbextensions = "*"
 seaborn = "*"
+openpyxl = "*"
 
 [dev-packages]
 ipykernel = "*"
