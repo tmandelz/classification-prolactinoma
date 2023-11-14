@@ -66,11 +66,23 @@ def evaluate_model(model:BaseEstimator,data,y_true,wandbrun,class_names,train:bo
     report = classification_report(y_true, y_pred)
     conf_matrix = confusion_matrix(y_true, y_pred)
 
+    # Extract values from the confusion matrix
+    tn, fp, fn, tp = conf_matrix.ravel()
+
+    # Calculate sensitivity and specificity
+    sensitivity = tp / (tp + fn)
+    specificity = tn / (tn + fp)
+
+    
+    
+
     if verbose:
         print("Accuracy:", accuracy)
         print("Precision:", precision)
         print("Recall:", recall)
         print("f1score:", f1score)
+        print(f"Sensitivity: {sensitivity:.2f}")
+        print(f"Specificity: {specificity:.2f}")
         print("Classification Report:\n", report)
         print("Confusion Matrix:\n", conf_matrix)
     
@@ -79,11 +91,23 @@ def evaluate_model(model:BaseEstimator,data,y_true,wandbrun,class_names,train:bo
         wandbrun.log({'precision-train':precision})
         wandbrun.log({'recall-train':recall})
         wandbrun.log({'f1score-train':f1score})
+        wandbrun.log({'sensitivity-train':sensitivity})
+        wandbrun.log({'specificity-train':specificity})
     else:
         wandbrun.log({'accuracy-test':accuracy})
         wandbrun.log({'precision-test':precision})
         wandbrun.log({'recall-test':recall})
         wandbrun.log({'f1score-test':f1score})
+        wandbrun.log({'sensitivity-test':sensitivity})
+        wandbrun.log({'specificity-test':specificity})
+
+        label_encoder = LabelEncoder()
+        y_encoded = label_encoder.fit_transform(y_true) 
+        
+        fpr, tpr, thresholds = roc_curve(y_encoded, y_pred_prob)
+        auc = roc_auc_score(y_encoded, y_pred_prob) 
+        wandbrun.log({'auc-test':auc})
+
         plt.figure(figsize=(12, 6))
         sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', cbar=False, xticklabels=class_names_cm, yticklabels=class_names_cm)
         plt.xlabel('Predicted')
@@ -92,11 +116,6 @@ def evaluate_model(model:BaseEstimator,data,y_true,wandbrun,class_names,train:bo
         wandb.log({"confusion_matrix": wandb.Image(plt)})
         plt.close()
 
-        label_encoder = LabelEncoder()
-        y_encoded = label_encoder.fit_transform(y_true)  # y is your original labels
-        
-        fpr, tpr, thresholds = roc_curve(y_encoded, y_pred_prob)
-        auc = roc_auc_score(y_encoded, y_pred_prob) 
         plt.figure(figsize=(12, 6))
         plt.plot(fpr, tpr, linewidth=2, label=f'AUC = {auc:.2f}')
         plt.plot([0, 1], [0, 1], 'k--', linewidth=2)
@@ -105,6 +124,8 @@ def evaluate_model(model:BaseEstimator,data,y_true,wandbrun,class_names,train:bo
         plt.xlabel('False Positive Rate (FPR)')
         plt.ylabel('True Positive Rate (TPR)')
         plt.title('ROC Curve')
+        plt.axhline(y=0.8, color='r', linestyle='--', label='sensitivity at 80%', alpha=0.3)
+        plt.axvline(x=0.7, color='g', linestyle='--', label='specificity at 70%', alpha=0.3)
         plt.legend(loc="lower right")
         wandb.log({"roc_auc_score": wandb.Image(plt)})
         plt.close()
