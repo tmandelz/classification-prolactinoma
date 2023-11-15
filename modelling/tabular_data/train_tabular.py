@@ -177,7 +177,8 @@ def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
 
         # Add overlapping shading
         plt.fill_between(
-            x_overlap, y_overlap[0], y_overlap[1], color='gray', alpha=0.3, label='Preferred Area')
+            x_overlap, y_overlap[0], y_overlap[1], color='gray',
+            alpha=0.3, label='Preferred Area')
         plt.axhline(y=0.8, color='r', linestyle='--',
                     label='sensitivity at 80%', alpha=0.3)
         plt.axvline(x=(1-0.7), color='g', linestyle='--',
@@ -195,7 +196,11 @@ def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
         log_Y_true.columns = ['label']
         log_Y_pred.columns = ['prediction']
 
+        correct_pred = pd.DataFrame((log_Y_true.values == log_Y_pred.values))
+        correct_pred.columns = ['correct_prediction']
+        correct_pred.index = log_Y_pred.index
         # concat features, label and prediction
-        log_df = pd.concat([log_data_rows, log_Y_true, log_Y_pred], axis=1)
+        log_df = pd.concat(
+            [log_data_rows, log_Y_true, log_Y_pred, correct_pred], axis=1)
         table = wandb.Table(dataframe=log_df)
         wandbrun.log({"Qualitative-Results": table})
