@@ -124,8 +124,24 @@ def evaluate_model(model:BaseEstimator,data,y_true,wandbrun,class_names,train:bo
         plt.xlabel('False Positive Rate (FPR)')
         plt.ylabel('True Positive Rate (TPR)')
         plt.title('ROC Curve')
-        plt.axhline(y=0.8, color='r', linestyle='--', label='sensitivity at 80%', alpha=0.3)
-        plt.axvline(x=0.7, color='g', linestyle='--', label='specificity at 70%', alpha=0.3)
+        plt.axhline(y=0.8, color='r', linestyle='--',
+                    label='sensitivity at 80%', alpha=0.2)
+        plt.axvline(x=0.7, color='g', linestyle='--',
+                    label='specificity at 70%', alpha=0.2)
         plt.legend(loc="lower right")
-        wandb.log({"roc_auc_score": wandb.Image(plt)})
+        wandbrun.log({"roc_auc_score": wandb.Image(plt)})
         plt.close()
+
+        # Log random sampled qualitative results to wandb
+        # sample 5 entries
+        random_ind = np.random.choice(range(0, len(X)), 5, replace=False)
+        log_data_rows = X.iloc[random_ind]
+        log_Y_true = pd.DataFrame(y_true.iloc[random_ind])
+        log_Y_pred = pd.DataFrame(pd.DataFrame(y_pred).iloc[random_ind])
+        log_Y_true.columns = ['label']
+        log_Y_pred.columns = ['prediction']
+
+        # concat features, label and prediction
+        log_df = pd.concat([log_data_rows, log_Y_true, log_Y_pred], axis=1)
+        table = wandb.Table(dataframe=log_df)
+        wandbrun.log({"Qualitative-Results": table})
