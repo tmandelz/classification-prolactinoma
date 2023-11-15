@@ -3,6 +3,7 @@ from sklearn.metrics import accuracy_score, recall_score, f1_score, precision_sc
 from sklearn.preprocessing import LabelEncoder
 import matplotlib.pyplot as plt
 import wandb
+import numpy as np
 import seaborn as sns
 import numpy as np
 import pandas as pd
@@ -39,7 +40,8 @@ def setup_wandb_run(
     return run
 
 
-def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.DataFrame, y_test: pd.DataFrame, fold: int, run_group: str = "Tab-Data",
+def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame,
+        X_test: pd.DataFrame, y_test: pd.DataFrame, fold: int, run_group: str = "Tab-Data",
         model_architecture: str = 'LogReg', verbose: bool = False, class_names: list = ['non-prolaktinom', 'prolaktinom']):
     """
     Fits a model on data from a fold and evaluates on train and test set
@@ -78,8 +80,8 @@ def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame, X_te
 
 
 def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
-                   wandbrun: wandb.run, class_names: list, train: bool = False, verbose: bool = False,
-                   class_names_cm: list = ['non-prolaktinom', 'prolaktinom']):
+                   wandbrun: wandb.run, class_names: list, train: bool = False,
+                   verbose: bool = False, class_names_cm: list = ['non-prolaktinom', 'prolaktinom']):
     """
     Fits a model on data from a fold and evaluates on train and test set
     :param BaseEstimator model: Sklearn BaseEstimator or Implementation
@@ -136,6 +138,7 @@ def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
         wandbrun.log({'f1score-train': f1score})
         wandbrun.log({'sensitivity-train': sensitivity})
         wandbrun.log({'specificity-train': specificity})
+        wandbrun.log({'auc-train': auc})
     else:
         # Log the test metrics to wandb
         wandbrun.log({'accuracy-test': accuracy})
@@ -163,10 +166,22 @@ def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
         plt.xlabel('False Positive Rate (FPR)')
         plt.ylabel('True Positive Rate (TPR)')
         plt.title('ROC Curve')
+
+        # Define the coordinates for the shaded region
+        x_start, x_end = 0., .3
+        y_start, y_end = 0.8, 1
+
+        # Find the overlapping region
+        x_overlap = np.clip([x_start, x_end], min(fpr), max(fpr))
+        y_overlap = np.clip([y_start, y_end], min(tpr), max(tpr))
+
+        # Add overlapping shading
+        plt.fill_between(
+            x_overlap, y_overlap[0], y_overlap[1], color='gray', alpha=0.3, label='Preferred Area')
         plt.axhline(y=0.8, color='r', linestyle='--',
-                    label='sensitivity at 80%', alpha=0.2)
-        plt.axvline(x=0.7, color='g', linestyle='--',
-                    label='specificity at 70%', alpha=0.2)
+                    label='sensitivity at 80%', alpha=0.3)
+        plt.axvline(x=(1-0.7), color='g', linestyle='--',
+                    label='specificity at 70%', alpha=0.3)
         plt.legend(loc="lower right")
         wandbrun.log({"roc_auc_score": wandb.Image(plt)})
         plt.close()
