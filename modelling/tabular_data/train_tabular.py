@@ -1,16 +1,19 @@
 from sklearn.base import BaseEstimator
-from sklearn.metrics import accuracy_score,recall_score,f1_score,precision_score, classification_report, confusion_matrix,roc_curve, roc_auc_score
+from sklearn.metrics import accuracy_score, recall_score, f1_score, precision_score, classification_report, confusion_matrix, roc_curve, roc_auc_score
 from sklearn.preprocessing import LabelEncoder
 import matplotlib.pyplot as plt
 import wandb
 import seaborn as sns
+import numpy as np
+import pandas as pd
+
 
 def setup_wandb_run(
     project_name: str,
     run_group: str,
     fold: int,
     model_architecture: str,
-    batchsize:int,
+    batchsize: int,
 ):
     """
     Sets a new run up (used for k-fold)
@@ -30,39 +33,73 @@ def setup_wandb_run(
         group=run_group,
         config={
             "model architecture": model_architecture,
-            "batchsize":batchsize,
+            "batchsize": batchsize,
         },
     )
     return run
 
-def fit(model:BaseEstimator,X_train,y_train,X_test,y_test, fold:int,run_group="Tab-Data",
-        model_architecture='LogReg',preprocessing_func = None,
-        verbose:bool = False,class_names = ['non-prolaktinom','prolaktinom']):
+
+def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.DataFrame, y_test: pd.DataFrame, fold: int, run_group: str = "Tab-Data",
+        model_architecture: str = 'LogReg', verbose: bool = False, class_names: list = ['non-prolaktinom', 'prolaktinom']):
+    """
+    Fits a model on data from a fold and evaluates on train and test set
+    :param BaseEstimator model: Sklearn BaseEstimator or Implementation
+    :param pd.DataFrame X_train: Training Features, should include a 'fold' column
+    :param pd.DataFrame y_train: Training Labels
+    :param pd.DataFrame X_test: Test Features, should not include a 'fold' column
+    :param pd.DataFrame y_test: Test Labels, should include a 'fold' column
+    :param int fold: Fold integer to fit on
+    :param str run_group: name of the rungroup in wandb
+    :param str model_architecture: model architecture of the rungroup in wandb
+    :param bool verbose: boolean if metrics should be printed
+    :param list class_names: label names as strings, maybe overwritten for some models
+    """
+    # init the wandb run
     run = setup_wandb_run(project_name="pro5d-classification-prolactinoma",
-                        run_group=run_group,
-                        fold=fold, model_architecture=model_architecture,
+                          run_group=run_group,
+                          fold=fold, model_architecture=model_architecture,
                           batchsize='Full')
-    if preprocessing_func is not None:
-        X_train = preprocessing_func(X_train)
-    
+
+    # get the data from the fold and remove the fold column
     data_fold = X_train[X_train['fold'] == fold]
     y_fold = y_train[X_train['fold'] == fold]
     data_fold = data_fold.drop('fold', axis=1)
-    
-    model.fit(data_fold,y_fold)
-    evaluate_model(model,data_fold,y_fold,run,class_names,True,verbose)
-    evaluate_model(model,X_test,y_test,run,class_names,False,verbose)
+
+    # fit the model
+    model.fit(data_fold, y_fold)
+    # evaluate on train set (fold)
+    evaluate_model(model, data_fold, y_fold, run, class_names, True, verbose)
+    # evaluate on test set
+    evaluate_model(model, X_test, y_test, run, class_names, False, verbose)
+
+    # finish the wandb run
     run.finish()
     return model
 
-def evaluate_model(model:BaseEstimator,data,y_true,wandbrun,class_names,train:bool =False,verbose:bool = False,class_names_cm = ['non-prolaktinom','prolaktinom']):
 
-    y_pred = model.predict(data)
-    y_pred_prob = model.predict_proba(data)[:, 1]
+def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
+                   wandbrun: wandb.run, class_names: list, train: bool = False, verbose: bool = False,
+                   class_names_cm: list = ['non-prolaktinom', 'prolaktinom']):
+    """
+    Fits a model on data from a fold and evaluates on train and test set
+    :param BaseEstimator model: Sklearn BaseEstimator or Implementation
+    :param pd.DataFrame X: Features to evaluate on
+    :param pd.DataFrame y_true: Labels to evaluate on
+    :param wandb.run wandbrun: wandb run to log to
+    :param bool train: bool to indicate that the evaluation is on the training set, logs less to wandb
+    :param bool verbose: boolean if metrics should be printed
+    :param list class_names: label names as strings for the metrics, may be changed
+    :param list class_names_cm: label names as strings for the reports, should not be changed
+    """
+    # predict labels als well as probabilities
+    y_pred = model.predict(X)
+    y_pred_prob = model.predict_proba(X)[:, 1]
+
+    # calculate various metrics and reports
     accuracy = accuracy_score(y_true, y_pred)
-    precision = precision_score(y_true, y_pred,pos_label=class_names[-1])
-    recall = recall_score(y_true, y_pred,pos_label=class_names[-1])
-    f1score = f1_score(y_true, y_pred,pos_label=class_names[-1])
+    precision = precision_score(y_true, y_pred, pos_label=class_names[-1])
+    recall = recall_score(y_true, y_pred, pos_label=class_names[-1])
+    f1score = f1_score(y_true, y_pred, pos_label=class_names[-1])
     report = classification_report(y_true, y_pred)
     conf_matrix = confusion_matrix(y_true, y_pred)
 
@@ -73,9 +110,14 @@ def evaluate_model(model:BaseEstimator,data,y_true,wandbrun,class_names,train:bo
     sensitivity = tp / (tp + fn)
     specificity = tn / (tn + fp)
 
-    
-    
+    # encode labels for metrics and reports
+    label_encoder = LabelEncoder()
+    y_encoded = label_encoder.fit_transform(y_true)
+    # calculate fpr and tpr as well as auc
+    fpr, tpr, thresholds = roc_curve(y_encoded, y_pred_prob)
+    auc = roc_auc_score(y_encoded, y_pred_prob)
 
+    # print the metrics and reports if verbose
     if verbose:
         print("Accuracy:", accuracy)
         print("Precision:", precision)
@@ -85,37 +127,34 @@ def evaluate_model(model:BaseEstimator,data,y_true,wandbrun,class_names,train:bo
         print(f"Specificity: {specificity:.2f}")
         print("Classification Report:\n", report)
         print("Confusion Matrix:\n", conf_matrix)
-    
+
     if train:
-        wandbrun.log({'accuracy-train':accuracy})
-        wandbrun.log({'precision-train':precision})
-        wandbrun.log({'recall-train':recall})
-        wandbrun.log({'f1score-train':f1score})
-        wandbrun.log({'sensitivity-train':sensitivity})
-        wandbrun.log({'specificity-train':specificity})
+        # Log the train metrics to wandb
+        wandbrun.log({'accuracy-train': accuracy})
+        wandbrun.log({'precision-train': precision})
+        wandbrun.log({'recall-train': recall})
+        wandbrun.log({'f1score-train': f1score})
+        wandbrun.log({'sensitivity-train': sensitivity})
+        wandbrun.log({'specificity-train': specificity})
     else:
-        wandbrun.log({'accuracy-test':accuracy})
-        wandbrun.log({'precision-test':precision})
-        wandbrun.log({'recall-test':recall})
-        wandbrun.log({'f1score-test':f1score})
-        wandbrun.log({'sensitivity-test':sensitivity})
-        wandbrun.log({'specificity-test':specificity})
+        # Log the test metrics to wandb
+        wandbrun.log({'accuracy-test': accuracy})
+        wandbrun.log({'precision-test': precision})
+        wandbrun.log({'recall-test': recall})
+        wandbrun.log({'f1score-test': f1score})
+        wandbrun.log({'sensitivity-test': sensitivity})
+        wandbrun.log({'specificity-test': specificity})
+        wandbrun.log({'auc-test': auc})
 
-        label_encoder = LabelEncoder()
-        y_encoded = label_encoder.fit_transform(y_true) 
-        
-        fpr, tpr, thresholds = roc_curve(y_encoded, y_pred_prob)
-        auc = roc_auc_score(y_encoded, y_pred_prob) 
-        wandbrun.log({'auc-test':auc})
-
+        # Log the confusion matrix image to wandb
         plt.figure(figsize=(12, 6))
-        sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', cbar=False, xticklabels=class_names_cm, yticklabels=class_names_cm)
-        plt.xlabel('Predicted')
-        plt.ylabel('True')
-        # Log the confusion matrix image to W&B
-        wandb.log({"confusion_matrix": wandb.Image(plt)})
+        sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues',
+                    cbar=False, xticklabels=class_names_cm,
+                    yticklabels=class_names_cm)
+        wandbrun.log({"confusion_matrix": wandb.Image(plt)})
         plt.close()
 
+        # Log AUC Curve to wandb
         plt.figure(figsize=(12, 6))
         plt.plot(fpr, tpr, linewidth=2, label=f'AUC = {auc:.2f}')
         plt.plot([0, 1], [0, 1], 'k--', linewidth=2)
