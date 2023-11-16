@@ -1,6 +1,6 @@
 import os
 import sys
-import cc3d
+#import cc3d
 import time
 import torch
 import warnings
@@ -11,6 +11,11 @@ from .Preprocessing import Preprocessing
 from .model import SegmentationModel
 from skimage.measure import regionprops
 from nibabel.orientations import axcodes2ornt, ornt_transform, inv_ornt_aff
+import numpy as np
+import torch
+from scipy.ndimage import label
+from skimage.measure import regionprops
+
 warnings.filterwarnings("ignore")     
 if torch.cuda.is_available():
     os.environ["CUDA_VISIBLE_DEVICES"] = "0" 
@@ -34,36 +39,63 @@ class Predictor():
     def prediction(self, vol_path):    
         modelseg = SegmentationModel()
         preprocessing = Preprocessing()
-        new_state_dict_seg = torch.utils.model_zoo.load_url('https://github.com/MICLab-Unicamp/HypAST/releases/download/v1.0.0/weights.pth')
+        new_state_dict_seg = torch.utils.model_zoo.load_url('https://github.com/MICLab-Unicamp/HypAST/releases/download/v1.0.0/weights.pth',map_location=torch.device('cpu'))
         modelseg.load_state_dict(new_state_dict_seg)
         modelseg.to(device)
         modelseg.eval()
         soft = nn.Softmax()
         input_volume, affine, pixdim, shape, img_oriented, orig_ornt = preprocessing.preproc(vol_path)
         final_seg = np.zeros((112,112,90))
+        # with torch.no_grad():
+        #     for j in range(87):
+        #         inputt = torch.from_numpy(input_volume[...,j:j+3]).permute(2,0,1).float()
+        #         img = inputt.view(1,3,112,112).to(device)
+        #         outseg = soft(modelseg(img))
+        #         final_seg[...,j+1] = outseg[0,1].detach().cpu().numpy() 
+
+        #     labels_out = cc3d.connected_components((final_seg>0.8).astype(np.uint8))
+        #     reg = regionprops(labels_out)
+        #     for blob in reg:
+        #         if blob.area<50:
+        #             labels_out[labels_out==blob.label] = 0
+        #     out_final = (labels_out>0).astype(int)
+
+        #     if labels_out.sum() == 0:
+        #         labels_out = cc3d.connected_components((final_seg>0.2).astype(np.uint8))
+        #         reg = regionprops(labels_out)
+        #         for blob in reg:
+        #             if blob.area<50:
+        #                 labels_out[labels_out==blob.label] =0
+        #         out_final = (labels_out>0).astype(int)
+
+        # return out_final, affine, pixdim, shape, img_oriented, orig_ornt
+        
+
         with torch.no_grad():
             for j in range(87):
-                inputt = torch.from_numpy(input_volume[...,j:j+3]).permute(2,0,1).float()
-                img = inputt.view(1,3,112,112).to(device)
+                inputt = torch.from_numpy(input_volume[..., j:j+3]).permute(2, 0, 1).float()
+                img = inputt.view(1, 3, 112, 112).to(device)
                 outseg = soft(modelseg(img))
-                final_seg[...,j+1] = outseg[0,1].detach().cpu().numpy() 
+                final_seg[..., j+1] = outseg[0, 1].detach().cpu().numpy()
 
-            labels_out = cc3d.connected_components((final_seg>0.8).astype(np.uint8))
+            # Using scipy.ndimage.label instead of cc3d
+            labels_out, num_features = label((final_seg > 0.8).astype(np.uint8))
             reg = regionprops(labels_out)
             for blob in reg:
-                if blob.area<50:
-                    labels_out[labels_out==blob.label] = 0
-            out_final = (labels_out>0).astype(int)
+                if blob.area < 50:
+                    labels_out[labels_out == blob.label] = 0
+            out_final = (labels_out > 0).astype(int)
 
             if labels_out.sum() == 0:
-                labels_out = cc3d.connected_components((final_seg>0.2).astype(np.uint8))
+                labels_out, num_features = label((final_seg > 0.2).astype(np.uint8))
                 reg = regionprops(labels_out)
                 for blob in reg:
-                    if blob.area<50:
-                        labels_out[labels_out==blob.label] =0
-                out_final = (labels_out>0).astype(int)
+                    if blob.area < 50:
+                        labels_out[labels_out == blob.label] = 0
+                out_final = (labels_out > 0).astype(int)
 
         return out_final, affine, pixdim, shape, img_oriented, orig_ornt
+
 
     def array2nii(self, out_final, affine, pixdim, shape):
 
