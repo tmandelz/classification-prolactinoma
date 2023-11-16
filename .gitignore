@@ -180,3 +180,5 @@ cython_debug/
 .vscode
 *__pycache__*
 *wandb*
+# MRI images
+*.nii
