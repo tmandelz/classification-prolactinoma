@@ -65,22 +65,30 @@ def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame,
     # get the data from the fold and remove the fold column
     data_fold = X_train[X_train['fold'] == fold]
     y_fold = y_train[X_train['fold'] == fold]
+
+    X_train_all_folds = X_train[X_train['fold'] != fold]
+    y_train_all_folds = y_train[X_train['fold'] != fold]
+
     data_fold = data_fold.drop('fold', axis=1)
+    X_train_all_folds = X_train_all_folds.drop('fold', axis=1)
 
-    # fit the model
-    model.fit(data_fold, y_fold)
-    # evaluate on train set (fold)
-    evaluate_model(model, data_fold, y_fold, run, class_names, True, verbose)
+    if verbose:
+        print(f"Shape of Leave one out Fold: {data_fold.shape}")
+        print(f"Shape of Trainset: {X_train_all_folds.shape}")
+    # fit the model on train set
+    model.fit(X_train_all_folds, y_train_all_folds)
+    # evaluate on train set (all folds)
+    evaluate_model(model, X_train_all_folds, y_train_all_folds, run, class_names, 'train', verbose)
+    # evaluate on val set (leave one out fold)
+    evaluate_model(model, data_fold, y_fold, run, class_names, 'val', verbose)
     # evaluate on test set
-    evaluate_model(model, X_test, y_test, run, class_names, False, verbose)
-
+    evaluate_model(model, X_test, y_test, run, class_names, 'test', verbose)
     # finish the wandb run
     run.finish()
     return model
 
-
 def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
-                   wandbrun: wandb.run, class_names: list, train: bool = False,
+                   wandbrun: wandb.run, class_names: list, eval_mode: str = 'train',
                    verbose: bool = False, class_names_cm: list = ['non-prolaktinom', 'prolaktinom']):
     """
     Fits a model on data from a fold and evaluates on train and test set
@@ -88,11 +96,12 @@ def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
     :param pd.DataFrame X: Features to evaluate on
     :param pd.DataFrame y_true: Labels to evaluate on
     :param wandb.run wandbrun: wandb run to log to
-    :param bool train: bool to indicate that the evaluation is on the training set, logs less to wandb
+    :param str eval_mode: str to indicate that the evaluation is on the training, val set or test set, logs less or more to wandb
     :param bool verbose: boolean if metrics should be printed
     :param list class_names: label names as strings for the metrics, may be changed
     :param list class_names_cm: label names as strings for the reports, should not be changed
     """
+
     # predict labels als well as probabilities
     y_pred = model.predict(X)
     y_pred_prob = model.predict_proba(X)[:, 1]
@@ -130,7 +139,7 @@ def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
         print("Classification Report:\n", report)
         print("Confusion Matrix:\n", conf_matrix)
 
-    if train:
+    if eval_mode == 'train':
         # Log the train metrics to wandb
         wandbrun.log({'accuracy-train': accuracy})
         wandbrun.log({'precision-train': precision})
@@ -139,7 +148,16 @@ def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
         wandbrun.log({'sensitivity-train': sensitivity})
         wandbrun.log({'specificity-train': specificity})
         wandbrun.log({'auc-train': auc})
-    else:
+    elif eval_mode == 'val':
+        # Log the train metrics to wandb
+        wandbrun.log({'accuracy-val': accuracy})
+        wandbrun.log({'precision-val': precision})
+        wandbrun.log({'recall-val': recall})
+        wandbrun.log({'f1score-val': f1score})
+        wandbrun.log({'sensitivity-val': sensitivity})
+        wandbrun.log({'specificity-val': specificity})
+        wandbrun.log({'auc-val': auc})
+    elif eval_mode == 'test':
         # Log the test metrics to wandb
         wandbrun.log({'accuracy-test': accuracy})
         wandbrun.log({'precision-test': precision})
@@ -149,12 +167,15 @@ def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
         wandbrun.log({'specificity-test': specificity})
         wandbrun.log({'auc-test': auc})
 
+    if eval_mode != 'train':
         # Log the confusion matrix image to wandb
         plt.figure(figsize=(12, 6))
         sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues',
                     cbar=False, xticklabels=class_names_cm,
                     yticklabels=class_names_cm)
-        wandbrun.log({"confusion_matrix": wandb.Image(plt)})
+        plt.xlabel('Predicted Labels')
+        plt.ylabel('True Labels')
+        wandbrun.log({f"confusion_matrix-{eval_mode}": wandb.Image(plt)})
         plt.close()
 
         # Log AUC Curve to wandb
@@ -184,23 +205,35 @@ def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
         plt.axvline(x=(1-0.7), color='g', linestyle='--',
                     label='specificity at 70%', alpha=0.3)
         plt.legend(loc="lower right")
-        wandbrun.log({"roc_auc_score": wandb.Image(plt)})
+        wandbrun.log({f"roc_auc_score--{eval_mode}": wandb.Image(plt)})
         plt.close()
 
         # Log random sampled qualitative results to wandb
         # sample 5 entries
         random_ind = np.random.choice(range(0, len(X)), 5, replace=False)
         log_data_rows = X.iloc[random_ind]
-        log_Y_true = pd.DataFrame(y_true.iloc[random_ind])
+
+        log_Y_true = pd.DataFrame(y_true).iloc[random_ind]
         log_Y_pred = pd.DataFrame(pd.DataFrame(y_pred).iloc[random_ind])
+
         log_Y_true.columns = ['label']
         log_Y_pred.columns = ['prediction']
 
+        # if len(log_Y_true == 0) + len(log_Y_true == 1) > 0:
+        #     log_Y_true.loc[log_Y_true['label'] == 0, 'label'] = class_names_cm[0]
+        #     log_Y_true.loc[log_Y_true['label'] == 1, 'label'] = class_names_cm[1]
+        # if len(log_Y_pred == 0) + len(log_Y_pred == 1) > 0:
+        #     log_Y_pred.loc[log_Y_pred['prediction'] == 0, 'prediction'] = class_names_cm[0]
+        #     log_Y_pred.loc[log_Y_pred['prediction'] == 1, 'prediction'] = class_names_cm[1]
+
+
         correct_pred = pd.DataFrame((log_Y_true.values == log_Y_pred.values))
         correct_pred.columns = ['correct_prediction']
-        correct_pred.index = log_Y_pred.index
+        correct_pred.index = log_Y_true.index
+        log_Y_pred.index = log_Y_true.index
+
         # concat features, label and prediction
         log_df = pd.concat(
             [log_data_rows, log_Y_true, log_Y_pred, correct_pred], axis=1)
         table = wandb.Table(dataframe=log_df)
-        wandbrun.log({"Qualitative-Results": table})
+        wandbrun.log({f"Qualitative-Results-{eval_mode}": table})
