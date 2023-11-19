@@ -15,6 +15,7 @@ def setup_wandb_run(
     fold: int,
     model_architecture: str,
     batchsize: int,
+    wandb_additional_config: dict
 ):
     """
     Sets a new run up (used for k-fold)
@@ -23,7 +24,7 @@ def setup_wandb_run(
     :param str fold: number of the executing fold
     :param str model_architecture: Modeltype (architectur) of the model
     :param int batchsize
-    :param int seed
+    :param dict wandb_additional_config: dictionary with additional wandb run parameters
     """
     # init wandb
     run = wandb.init(
@@ -32,17 +33,19 @@ def setup_wandb_run(
         entity="pro5d-classification-prolactinoma",
         name=f"{fold}-Fold",
         group=run_group,
-        config={
+        config=wandb_additional_config | {
             "model architecture": model_architecture,
             "batchsize": batchsize,
-        },
+        }
     )
     return run
 
 
 def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame,
         X_test: pd.DataFrame, y_test: pd.DataFrame, fold: int, run_group: str = "Tab-Data",
-        model_architecture: str = 'LogReg', verbose: bool = False, class_names: list = ['non-prolaktinom', 'prolaktinom']):
+        model_architecture: str = 'LogReg', verbose: bool = False,
+        class_names: list = ['non-prolaktinom', 'prolaktinom'],
+        wandb_additional_config: dict = {}):
     """
     Fits a model on data from a fold and evaluates on train and test set
     :param BaseEstimator model: Sklearn BaseEstimator or Implementation
@@ -55,37 +58,51 @@ def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame,
     :param str model_architecture: model architecture of the rungroup in wandb
     :param bool verbose: boolean if metrics should be printed
     :param list class_names: label names as strings, maybe overwritten for some models
+    :param dict wandb_additional_config: dictionary with additional wandb run parameters
     """
     # init the wandb run
     run = setup_wandb_run(project_name="pro5d-classification-prolactinoma",
                           run_group=run_group,
                           fold=fold, model_architecture=model_architecture,
-                          batchsize='Full')
+                          wandb_additional_config=wandb_additional_config,
+                          batchsize='Full',)
 
-    # get the data from the fold and remove the fold column
-    data_fold = X_train[X_train['fold'] == fold]
-    y_fold = y_train[X_train['fold'] == fold]
+    if fold == 'all':
+        if verbose:
+            print("Using the whole dataset to train.")
+        X_train_all_folds = X_train
+        y_train_all_folds = y_train
+        data_fold = pd.DataFrame()
+    else:
+        # get the data from the fold and remove the fold column
+        data_fold = X_train[X_train['fold'] == fold]
+        y_fold = y_train[X_train['fold'] == fold]
 
-    X_train_all_folds = X_train[X_train['fold'] != fold]
-    y_train_all_folds = y_train[X_train['fold'] != fold]
+        X_train_all_folds = X_train[X_train['fold'] != fold]
+        y_train_all_folds = y_train[X_train['fold'] != fold]
 
-    data_fold = data_fold.drop('fold', axis=1)
+        data_fold = data_fold.drop('fold', axis=1)
+    # drop fold column
     X_train_all_folds = X_train_all_folds.drop('fold', axis=1)
 
     if verbose:
-        print(f"Shape of Leave one out Fold: {data_fold.shape}")
+        print(f"Shape of validation fold Fold: {data_fold.shape}")
         print(f"Shape of Trainset: {X_train_all_folds.shape}")
     # fit the model on train set
     model.fit(X_train_all_folds, y_train_all_folds)
     # evaluate on train set (all folds)
-    evaluate_model(model, X_train_all_folds, y_train_all_folds, run, class_names, 'train', verbose)
-    # evaluate on val set (leave one out fold)
-    evaluate_model(model, data_fold, y_fold, run, class_names, 'val', verbose)
+    evaluate_model(model, X_train_all_folds, y_train_all_folds,
+                   run, class_names, 'train', verbose)
+    if fold != "all":
+        # evaluate on val set (left out fold)
+        evaluate_model(model, data_fold, y_fold, run,
+                       class_names, 'val', verbose)
     # evaluate on test set
     evaluate_model(model, X_test, y_test, run, class_names, 'test', verbose)
     # finish the wandb run
     run.finish()
     return model
+
 
 def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
                    wandbrun: wandb.run, class_names: list, eval_mode: str = 'train',
@@ -218,14 +235,6 @@ def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
 
         log_Y_true.columns = ['label']
         log_Y_pred.columns = ['prediction']
-
-        # if len(log_Y_true == 0) + len(log_Y_true == 1) > 0:
-        #     log_Y_true.loc[log_Y_true['label'] == 0, 'label'] = class_names_cm[0]
-        #     log_Y_true.loc[log_Y_true['label'] == 1, 'label'] = class_names_cm[1]
-        # if len(log_Y_pred == 0) + len(log_Y_pred == 1) > 0:
-        #     log_Y_pred.loc[log_Y_pred['prediction'] == 0, 'prediction'] = class_names_cm[0]
-        #     log_Y_pred.loc[log_Y_pred['prediction'] == 1, 'prediction'] = class_names_cm[1]
-
 
         correct_pred = pd.DataFrame((log_Y_true.values == log_Y_pred.values))
         correct_pred.columns = ['correct_prediction']
