@@ -12,24 +12,22 @@ class ImagesDataset(Dataset):
 
     def __init__(
         self, data: pd.DataFrame, 
-        augmentation: transforms, 
-        preproccessing:function,
+        transformer,
         mri_type: str = "t2_tse_fs_cor",
         use_mri_images: bool=True,
         use_tabular_data: bool= False
     ):
         """
         :param pd.DataFrame x_df: links of the jpg
-        :param transforms augmentation: augmentation for train data
-        :param function preproccessing: basic preproccesing for ROI-exctraction
+        :param transformer: save the preproccessing and the augmentation function
         :param str mri_type: type of mri
         :param bool use_mri_images: True if the mri images is used
         :param bool use_tabular_data: True if the tabular data is used
         """
         self.data = data
         self.label = self.data.loc[:,["Patient_ID","Case_ID","Category"]]
-        self.preproccessing = preproccessing
-        self.augmentation = augmentation
+        self.preproccessing = transformer.preprocessing
+        self.augmentation = transformer.data_augmentation_transformer
         self.mri_type = mri_type
         self.use_mri_images = use_mri_images
         self.use_tabular_data = use_tabular_data

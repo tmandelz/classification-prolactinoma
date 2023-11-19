@@ -66,9 +66,9 @@ class DeepModel_Trainer:
         lr: float,
         num_epochs: int,
         model_architecture: str,
+        batchsize: int,
     ):
         """
-        Thomas
         Sets a new run up (used for k-fold)
         :param str project_name: Name of the project in wandb.
         :param str run_group: Name of the project in wandb.
@@ -76,19 +76,20 @@ class DeepModel_Trainer:
         :param int lr: learning rate of the model
         :param int num_epochs: number of epochs to train
         :param str model_architecture: Modeltype (architectur) of the model
+        :param int batchsize
         """
         # init wandb
         self.run = wandb.init(
             settings=wandb.Settings(start_method="thread"),
             project=project_name,
-            entity="deeptier",
+            entity="pro5d-classification-prolactinoma",
             name=f"{fold}-Fold",
             group=run_group,
             config={
                 "learning rate": lr,
                 "epochs": num_epochs,
                 "model architecture": model_architecture,
-                "transformer": self.data_model.basic_transform,
+                "batchsize": batchsize,
             },
         )
 
@@ -105,7 +106,9 @@ class DeepModel_Trainer:
         num_workers: int = 16,
         lr: float = 1e-3,
         validate_batch_loss_each: int = 20,
-        cross_validation_random_seeding=False
+        cross_validation_random_seeding=False,
+        use_mri_images: bool=True,
+        use_tabular_data: bool= False
     ) -> None:
         """
         Jan
@@ -122,7 +125,8 @@ class DeepModel_Trainer:
         :param int lr: learning rate of the model
         :param int validate_batch_loss_each: defines when to log validation loss on the batch
         :param bool cross_validation_random_seeding: defines whether to use the same seed for each fold or to use different ones
-
+        :param bool use_mri_images: True if the mri images is used
+        :param bool use_tabular_data: True if the tabular data is used
         """
         #TODO: rework and separate cv and evaluation from this whole function to subfunctions
         # train loop over folds
@@ -168,17 +172,28 @@ class DeepModel_Trainer:
             batch_iter = 1
             for epoch in tqdm(range(num_epochs), unit="epoch", desc="Epoch-Iteration"):
                 loss_train = np.array([])
-                label_train_data = np.empty((0, 8))
+                label_train_data = np.empty([])
                 pred_train_data = np.array([])
 
                 # train loop over batches
                 for batch in self.train_loader:
 
                     # calc gradient
-                    data_inputs = batch["image"].to(device)
                     data_labels = batch["label"].to(device)
-
-                    preds = model(data_inputs)
+                    if use_mri_images and use_tabular_data:
+                        data_inputs = batch["image"].to(device)
+                        tab_data = batch["tab_data"].to(device)
+                        preds = model(data_inputs,tab_data)
+                    elif use_mri_images:
+                        data_inputs = batch["image"].to(device)
+                        preds = model(data_inputs)
+                    elif use_tabular_data:
+                        tab_data = batch["tab_data"].to(device)
+                        preds = model(tab_data)
+                    else:
+                        print("No Datatype selected")
+                        raise ValueError
+                    
                     loss = loss_module(preds, data_labels)
 
                     optimizer.zero_grad()
@@ -224,7 +239,7 @@ class DeepModel_Trainer:
                     pred_train_data,
                     label_train_data,
                     loss_val,
-                    np.argmax(pred_val, axis=1),
+                    pred_val,
                     label_val,
                 )
 
@@ -255,11 +270,10 @@ class DeepModel_Trainer:
         :rtype: np.array, np.array
         """
         model.eval()
-        predictions = np.empty((0, 8))
-        true_labels = np.empty((0, 8))
+        predictions = []
+        true_labels = []
         with torch.no_grad():  # Deactivate gradients for the following code
             for batch in data_loader:
-
                 # Determine prediction of model
                 data_inputs = batch["image"].to(self.device)
 
@@ -268,67 +282,13 @@ class DeepModel_Trainer:
                     (predictions, preds.data.cpu().numpy()), axis=0
                 )
 
-                # checks if labels columns exists -> if not exists test batch
-                if "label" in batch.keys():
-                    data_labels = batch["label"].to(self.device)
-                    true_labels = np.concatenate(
-                        (true_labels, data_labels.data.cpu().numpy()), axis=0
-                    )
+                
+                data_labels = batch["label"].to(self.device)
+                true_labels = np.concatenate(
+                    (true_labels, data_labels.data.cpu().numpy()), axis=0
+                )
         model.train()
         return predictions, true_labels
-
-    def submission(
-        self, submit_name: str,ensemble: bool = False
-    ):
-        """
-        Thomas
-        Makes a submission file and saves the models state
-        :param str submit_name: name of the file
-        :param int decrease_confidence: divide the output bevor calculating the softmax
-        :param bool ensemble: save models for ensemble model
-        """
-        #TODO: rename and rework this function to a save model function. maybe leave submission but use an if statement to make it optional to submit something
-        self._save_model(submit_name=submit_name)
-        self._submit_file(
-            submit_name=submit_name,
-            ensemble=ensemble,
-        )
-
-    def _submit_file(
-        self, submit_name: str, ensemble: bool = False
-    ):
-        """
-        Jan
-        Creates the file for the submission
-        :param str submit_name: name of the file
-        :param int decrease_confidence: divide the output bevor calculating the softmax
-        :param bool ensemble: save models for ensemble model
-        """
-        #TODO: rename and rework this function to a save model function. maybe leave submission but use an if statement to make it optional to submit something
-        # prediction off the test set
-        prediction_test = 0
-        if ensemble:
-            # combined_result = 0
-            for model in self.models:
-                prediction_test_fold, _ = self.predict(
-                    model, self.test_loader
-                )
-                prediction_test = np.add(prediction_test_fold, prediction_test)
-            prediction_test /= 5
-        else:
-            prediction_test, _ = self.predict(
-                self.model_fold5, self.test_loader
-            )
-        prediction_test = torch.softmax(
-            torch.from_numpy(prediction_test), dim=1)
-        results_df = pd.DataFrame(
-            prediction_test, columns=self.evaluation.classes)
-        submit_df = pd.concat(
-            [self.data_model.test.data.reset_index()["id"], results_df], axis=1
-        )
-        path = f"./data_submit/{submit_name}.csv"
-        submit_df.set_index("id").to_csv(path)
-        print(f"Saved submission: {submit_name} to {path}")
 
     def _save_model(self, submit_name: str):
         """

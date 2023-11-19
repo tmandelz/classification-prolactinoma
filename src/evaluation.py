@@ -1,11 +1,11 @@
 import numpy as np
 import pandas as pd
 import wandb
-from sklearn.metrics import f1_score
+from sklearn.metrics import confusion_matrix, roc_curve, roc_auc_score
 import matplotlib.pyplot as plt
 from PIL import Image
 from strenum import StrEnum
-
+import seaborn as sns
 
 class Label(StrEnum):
     """
@@ -13,7 +13,6 @@ class Label(StrEnum):
     """
     Label_1 = "label_1"
     Label_2 = "label_2"
-    Label_x = "label_x"
 
 
 
@@ -48,7 +47,6 @@ class Evaluation:
         label_val: np.array,
     ) -> None:
         """
-        Jan
         wandb log of different scores
         :param int epoch: index of the epoch to log
         :param float loss_train: log loss of the training
@@ -73,55 +71,40 @@ class Evaluation:
         log = {"epoch": epoch, "Loss train": loss_train, "Loss val": loss_val}
         wandb.log({**f1_train, **f1_test, **log})
 
+
     def per_model(self, label_val, pred_val, val_data) -> None:
         """
-        Jan
         wandb log of a confusion matrix and plots of wrong classified animals
         :param np.array label_val: labels of the validation
         :param np.array pred_val: prediction of the validation
         :param pd.dataframe val_data: validation data
         """
-        self.true_label = np.argmax(label_val, axis=1)
-        self.true_pred = np.argmax(pred_val, axis=1)
-        wrong_classified = np.where(self.true_label != self.true_pred)[0]
+        self.true_pred = np.round(pred_val, axis=1)
+        sensitivity,specificity,fpr,tpr,auc,conf_matrix = self.calc_metrics(label_val,self.true_pred,pred_val)
+        wandb.log({'sensitivity': sensitivity,
+                   'specificity': specificity,
+                   'auc': auc})
+        self.plot_roc_curve(fpr,tpr,auc)
+        self.plot_conf_matrix(conf_matrix)
 
-        #TODO: add a if, which decides if these should be plotted
-        self.plot_16_pictures(
-            np.random.choice(wrong_classified, replace=False,
-                             size=16), val_data
-        )
+        wrong_classified = np.random.choice(np.where(label_val != self.true_pred)[0])
+        correct_classified = np.random.choice(np.where(label_val == self.true_pred)[0])
+        
 
-        wandb.log(
-            {
-                "confusion matrix": wandb.sklearn.plot_confusion_matrix(
-                    self.true_label, self.true_pred, self.classes
-                ),
-                "wrong prediction": plt,
-            }
-        )
-        plt.close()
+    def calc_metrics(self,y_true,y_pred,y_pred_prob):
+        conf_matrix = confusion_matrix(y_true, y_pred)
+        # Extract values from the confusion matrix
+        tn, fp, fn, tp = conf_matrix.ravel()
 
-        #TODO: add a if, which decides if these should be plotted
-        #TODO: generalise "site"
-        data_wrong_class = val_data.iloc[wrong_classified]
-        site_most_wrong = data_wrong_class[
-            data_wrong_class["site"] == data_wrong_class["site"].value_counts(normalize=True
-                                                                              ).index[0]
-        ]
-        if len(site_most_wrong) < 16:
-            self.plot_16_pictures(range(len(site_most_wrong)), data_wrong_class)
-        else:
-            self.plot_16_pictures(
-                np.random.choice(range(len(site_most_wrong)),
-                                 size=16, replace=False),
-                data_wrong_class,
-            )
+        # Calculate sensitivity and specificity
+        sensitivity = tp / (tp + fn)
+        specificity = tn / (tn + fp)
 
-        plt.suptitle("worst site: " +
-                     str(data_wrong_class["site"][0]), size=120)
-        wandb.log({"Bad site": plt})
-        plt.close()
-
+        # calculate fpr and tpr as well as auc
+        fpr, tpr, thresholds = roc_curve(y_true, y_pred_prob)
+        auc = roc_auc_score(y_true, y_pred_prob)
+        return sensitivity,specificity,fpr,tpr,auc,conf_matrix
+    
     def plot_16_pictures(self, index: np.array, data: pd.DataFrame) -> None:
         """
         Jan
@@ -140,3 +123,46 @@ class Evaluation:
                 f"{self.classes[self.true_pred[variable]]} anstatt {self.classes[self.true_label[variable]]}",
                 size=60,
             )
+        wandb.log({"Wrong Predicted":plt})
+        plt.close()
+
+    def plot_roc_curve(self,fpr,tpr,auc):
+        # Log AUC Curve to wandb
+        plt.figure(figsize=(12, 6))
+        plt.plot(fpr, tpr, linewidth=2, label=f'AUC = {auc:.2f}')
+        plt.plot([0, 1], [0, 1], 'k--', linewidth=2)
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate (FPR)')
+        plt.ylabel('True Positive Rate (TPR)')
+        plt.title('ROC Curve')
+
+        # Define the coordinates for the shaded region
+        x_start, x_end = 0., .3
+        y_start, y_end = 0.8, 1
+
+        # Find the overlapping region
+        x_overlap = np.clip([x_start, x_end], min(fpr), max(fpr))
+        y_overlap = np.clip([y_start, y_end], min(tpr), max(tpr))
+
+        # Add overlapping shading
+        plt.fill_between(
+            x_overlap, y_overlap[0], y_overlap[1], color='gray',
+            alpha=0.3, label='Preferred Area')
+        plt.axhline(y=0.8, color='r', linestyle='--',
+                    label='sensitivity at 80%', alpha=0.3)
+        plt.axvline(x=(1-0.7), color='g', linestyle='--',
+                    label='specificity at 70%', alpha=0.3)
+        plt.legend(loc="lower right")
+        wandb.log({f"roc_auc_score": wandb.Image(plt)})
+        plt.close()
+
+    def plot_conf_matrix(self,conf_matrix):
+        plt.figure(figsize=(12, 6))
+        sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues',
+                    cbar=False, xticklabels=["non prolactinoma","prolactinoma"],
+                    yticklabels=["non prolactinoma","prolactinoma"])
+        plt.xlabel('Predicted Labels')
+        plt.ylabel('True Labels')
+        wandb.log({f"confusion_matrix": wandb.Image(plt)})
+        plt.close()
