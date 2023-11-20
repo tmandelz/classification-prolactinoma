@@ -80,7 +80,7 @@ class DeepModel_Trainer:
         """
         # init wandb
         self.run = wandb.init(
-            settings=wandb.Settings(start_method="thread"),
+            #settings=wandb.Settings(start_method="thread"),
             project=project_name,
             entity="pro5d-classification-prolactinoma",
             name=f"{fold}-Fold",
@@ -105,7 +105,6 @@ class DeepModel_Trainer:
         batchsize_train_data: int = 64,
         num_workers: int = 16,
         lr: float = 1e-3,
-        validate_batch_loss_each: int = 20,
         cross_validation_random_seeding=False,
         use_mri_images: bool=True,
         use_tabular_data: bool= False
@@ -123,7 +122,6 @@ class DeepModel_Trainer:
         :param int batchsize: batchsize of the training data
         :param int num_workers: number of workers for the data loader (optimize if GPU usage not optimal) -> default 16
         :param int lr: learning rate of the model
-        :param int validate_batch_loss_each: defines when to log validation loss on the batch
         :param bool cross_validation_random_seeding: defines whether to use the same seed for each fold or to use different ones
         :param bool use_mri_images: True if the mri images is used
         :param bool use_tabular_data: True if the tabular data is used
@@ -148,6 +146,7 @@ class DeepModel_Trainer:
                 lr,
                 num_epochs,
                 model_architecture,
+                batchsize_train_data
             )
 
             # prepare the kfold and dataloaders
@@ -200,18 +199,8 @@ class DeepModel_Trainer:
                     loss.backward()
                     optimizer.step()
 
-                    loss_val_batch = None
-                    if batch_iter % validate_batch_loss_each == 0:
-                        pred_val, label_val = self.predict(
-                            model,
-                            self.val_loader,
-                       )
-                        loss_val_batch = loss_module(
-                            torch.tensor(pred_val), torch.tensor(label_val)
-                        )
-
                     self.evaluation.per_batch(
-                        batch_iter, epoch, loss, loss_val_batch)
+                        batch_iter, epoch, loss)
 
                     # data for evaluation
                     label_train_data = np.concatenate(
@@ -245,7 +234,7 @@ class DeepModel_Trainer:
 
             # wandb per model
             self.evaluation.per_model(
-                label_val, pred_val, self.data_model.val.data)
+                label_val, pred_val, self.data_model.val)
 
             self.models.append(model)
             self.run.finish()

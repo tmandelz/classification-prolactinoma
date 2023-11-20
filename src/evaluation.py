@@ -1,40 +1,24 @@
 import numpy as np
-import pandas as pd
 import wandb
 from sklearn.metrics import confusion_matrix, roc_curve, roc_auc_score
 import matplotlib.pyplot as plt
-from PIL import Image
-from strenum import StrEnum
 import seaborn as sns
 
-class Label(StrEnum):
-    """
-    Enumeration String for our labels
-    """
-    Label_1 = "label_1"
-    Label_2 = "label_2"
 
 
 
 class Evaluation:
-    def __init__(self, data_classes: list = [label.value for label in Label]) -> None:
-        """
-        Jan
-        :param list data_classes: list of true labels (convert from int to str)
-        """
-        self.classes = data_classes
 
-    def per_batch(self, index_batch: int, epoch: int, loss_batch: float, loss_val: float = None) -> None:
+    def per_batch(self, index_batch: int, epoch: int, loss_batch: float) -> None:
         """
         Thomas
         Logs the loss of a batch
         :param int index_batch: index of the batch to log (step)
         :param int epoch: index of the epoch to log
         :param float loss_batch: loss of the batch for the trainset
-        :param float loss_val: loss of the batch for the validationset, is not logged every epoch, defaults to None
         """
         wandb.log({"index_batch": index_batch,
-                  "epoch": epoch, "loss batch": loss_batch, "loss batch val": loss_val})
+                  "epoch": epoch, "loss batch": loss_batch})
 
     def per_epoch(
         self,
@@ -56,23 +40,23 @@ class Evaluation:
         :param np.array pred_val: prediction of the validation
         :param np.array label_val: labels of the validation
         """
-        f1_train = {
-            f"train f1_score von {self.classes[animal]}": f1_score(
-                label_train[:, animal], pred_train == animal
-            )
-            for animal in range(len(self.classes))
-        }
-        f1_test = {
-            f"validation f1_score von {self.classes[animal]}": f1_score(
-                label_val[:, animal], pred_val == animal
-            )
-            for animal in range(len(self.classes))
-        }
+        true_pred_val = np.round(pred_val, axis=1)
+        sensitivity,specificity,fpr,tpr,auc,conf_matrix = self.calc_metrics(true_pred_val,true_pred_val,pred_val)
+        log_val = {'sensitivity_val': sensitivity,
+                   'specificity_val': specificity,
+                   'auc_val': auc}
+        
+        true_pred_train = np.round(pred_train, axis=1)
+        sensitivity,specificity,fpr,tpr,auc,conf_matrix = self.calc_metrics(label_train,true_pred_train,pred_train)
+        log_train = {'sensitivity_train': sensitivity,
+                   'specificity_train': specificity,
+                   'auc_train': auc}
+
         log = {"epoch": epoch, "Loss train": loss_train, "Loss val": loss_val}
-        wandb.log({**f1_train, **f1_test, **log})
+        wandb.log({**log,**log_val,**log_train})
 
 
-    def per_model(self, label_val, pred_val, val_data) -> None:
+    def per_model(self, label_val, pred_val) -> None:
         """
         wandb log of a confusion matrix and plots of wrong classified animals
         :param np.array label_val: labels of the validation
@@ -87,9 +71,15 @@ class Evaluation:
         self.plot_roc_curve(fpr,tpr,auc)
         self.plot_conf_matrix(conf_matrix)
 
-        wrong_classified = np.random.choice(np.where(label_val != self.true_pred)[0])
-        correct_classified = np.random.choice(np.where(label_val == self.true_pred)[0])
-        
+        index_fp = np.where((label_val == 0) & (self.true_pred==1))[0][:5]
+        index_fn = np.where((label_val == 1) & (self.true_pred==0))[0][:5]
+        index_tp = np.where((label_val == 1) & (self.true_pred==1))[0][:5]
+        index_tn = np.where((label_val == 0) & (self.true_pred==0))[0][:5]
+
+        wandb.log({"index false positiv": index_fp,
+                   "index false negativ": index_fn,
+                   "index true positiv":index_tp,
+                   "index true negativ": index_tn})
 
     def calc_metrics(self,y_true,y_pred,y_pred_prob):
         conf_matrix = confusion_matrix(y_true, y_pred)
@@ -104,27 +94,6 @@ class Evaluation:
         fpr, tpr, thresholds = roc_curve(y_true, y_pred_prob)
         auc = roc_auc_score(y_true, y_pred_prob)
         return sensitivity,specificity,fpr,tpr,auc,conf_matrix
-    
-    def plot_16_pictures(self, index: np.array, data: pd.DataFrame) -> None:
-        """
-        Jan
-        plot 16 pcitures
-        :param np.array index: index of the chosen observations
-        :param pd.DataFrame data: data with the filepath of the images
-        """
-        #TODO: check and maybe rework this
-        fig = plt.figure(figsize=(120, 90), dpi=20)
-        for n, variable in enumerate(index):
-            ax = fig.add_subplot(4, 4, n + 1)
-            datapoint = data.iloc[variable]
-            ax.imshow(Image.open(
-                "./competition_data/" + datapoint["filepath"]))
-            ax.set_title(
-                f"{self.classes[self.true_pred[variable]]} anstatt {self.classes[self.true_label[variable]]}",
-                size=60,
-            )
-        wandb.log({"Wrong Predicted":plt})
-        plt.close()
 
     def plot_roc_curve(self,fpr,tpr,auc):
         # Log AUC Curve to wandb
