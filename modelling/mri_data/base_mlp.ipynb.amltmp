@@ -1,0 +1,140 @@
+{
+  "cells": [
+    {
+      "cell_type": "code",
+      "source": [
+        "import os\n",
+        "print(os.getcwd())\n",
+        "if os.getcwd().endswith(\"mri_data\"):\n",
+        "    os.chdir(\"..\")\n",
+        "    os.chdir(\"..\")\n",
+        "\n",
+        "from src.modelling import DeepModel_Trainer\n",
+        "from src.augmentation import Transformer,None_Transform\n",
+        "from src.data_modules import DataModule,ImagesDataset\n",
+        "from torch import nn\n",
+        "import torch\n",
+        "from torchvision import transforms,models\n",
+        "import nibabel as nib\n",
+        "import numpy as np"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": "/mnt/batch/tasks/shared/LS_root/mounts/clusters/ksathmed1/code/Users/pro5d-classification-prolactinoma\n"
+        }
+      ],
+      "execution_count": 2,
+      "metadata": {
+        "gather": {
+          "logged": 1700575393999
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "%env \"WANDB_NOTEBOOK_NAME\" \"baseline\"\n",
+        "%env WANDB_SILENT=True\n",
+        "\n",
+        "base_transformer = Transformer(\n",
+        "    None_Transform(), \"select_roi\"\n",
+        ")\n",
+        "# %%\n",
+        "def base_mlp():\n",
+        "    model = nn.Sequential(\n",
+        "    nn.Flatten(),\n",
+        "    nn.Linear(\n",
+        "        75264, 1\n",
+        "    )) \n",
+        "    return model"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": "env: \"WANDB_NOTEBOOK_NAME\"=\"baseline\"\nenv: WANDB_SILENT=True\n"
+        }
+      ],
+      "execution_count": 3,
+      "metadata": {
+        "gather": {
+          "logged": 1700575394184
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "baseline = DeepModel_Trainer(DataModule(base_transformer), base_mlp)\n",
+        "baseline.train_model(\"Baseline MLP\", \"base_mlp\", num_epochs=6, test_model=False,batchsize_train_data=5,use_mri_images=True,use_tabular_data=False,num_workers=0)"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": "Fold-Iteration:   0%|                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | 0/5 [00:00<?, ?fold/s]"
+        },
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": "/anaconda/envs/azureml_py38/lib/python3.8/site-packages/torchvision/transforms/functional.py:1603: UserWarning: The default value of the antialias parameter of all the resizing transforms (Resize(), RandomResizedCrop(), etc.) will change from None to True in v0.17, in order to be consistent across the PIL and Tensor backends. To suppress this warning, directly pass antialias=True (recommended, future default), antialias=None (current default, which means False for Tensors and True for PIL), or antialias=False (only works on Tensors - PIL will still use antialiasing). This also applies if you are using the inference transforms from the models weights: update the call to weights.transforms(antialias=True).\n  warnings.warn(\n/mnt/batch/tasks/shared/LS_root/mounts/clusters/ksajazwi-cpu/code/Users/pro5d-classification-prolactinoma/src/modelling.py:183: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).\n  data_labels = torch.tensor(batch[\"label\"],dtype=float).to(device)\nEpoch-Iteration:   0%|                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | 0/6 [00:01<?, ?epoch/s]\nFold-Iteration:   0%|                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | 0/5 [00:01<?, ?fold/s]\n"
+        },
+        {
+          "output_type": "error",
+          "ename": "TypeError",
+          "evalue": "unsqueeze() missing 1 required positional arguments: \"dim\"",
+          "traceback": [
+            "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+            "\u001b[0;31mTypeError\u001b[0m                                 Traceback (most recent call last)",
+            "\u001b[1;32m/home/azureuser/cloudfiles/code/Users/pro5d-classification-prolactinoma/modelling/mri_data/base_mlp.ipynb Cell 3\u001b[0m line \u001b[0;36m2\n\u001b[1;32m      <a href='vscode-notebook-cell://amlext%2B2f737562736372697074696f6e732f33353036383039362d363637632d343632302d386262322d3662303530373635666434652f7265736f7572636547726f7570732f436f6d7075746546484e572f70726f7669646572732f4d6963726f736f66742e4d616368696e654c6561726e696e6753657276696365732f776f726b7370616365732f46484e572f636f6d70757465732f6b73616a617a77692d435055/home/azureuser/cloudfiles/code/Users/pro5d-classification-prolactinoma/modelling/mri_data/base_mlp.ipynb#W6sdnNjb2RlLXJlbW90ZQ%3D%3D?line=0'>1</a>\u001b[0m baseline \u001b[39m=\u001b[39m DeepModel_Trainer(DataModule(base_transformer), base_mlp)\n\u001b[0;32m----> <a href='vscode-notebook-cell://amlext%2B2f737562736372697074696f6e732f33353036383039362d363637632d343632302d386262322d3662303530373635666434652f7265736f7572636547726f7570732f436f6d7075746546484e572f70726f7669646572732f4d6963726f736f66742e4d616368696e654c6561726e696e6753657276696365732f776f726b7370616365732f46484e572f636f6d70757465732f6b73616a617a77692d435055/home/azureuser/cloudfiles/code/Users/pro5d-classification-prolactinoma/modelling/mri_data/base_mlp.ipynb#W6sdnNjb2RlLXJlbW90ZQ%3D%3D?line=1'>2</a>\u001b[0m baseline\u001b[39m.\u001b[39;49mtrain_model(\u001b[39m\"\u001b[39;49m\u001b[39mBaseline MLP\u001b[39;49m\u001b[39m\"\u001b[39;49m, \u001b[39m\"\u001b[39;49m\u001b[39mbase_mlp\u001b[39;49m\u001b[39m\"\u001b[39;49m, num_epochs\u001b[39m=\u001b[39;49m\u001b[39m6\u001b[39;49m, test_model\u001b[39m=\u001b[39;49m\u001b[39mFalse\u001b[39;49;00m,batchsize_train_data\u001b[39m=\u001b[39;49m\u001b[39m5\u001b[39;49m,use_mri_images\u001b[39m=\u001b[39;49m\u001b[39mTrue\u001b[39;49;00m,use_tabular_data\u001b[39m=\u001b[39;49m\u001b[39mFalse\u001b[39;49;00m,num_workers\u001b[39m=\u001b[39;49m\u001b[39m0\u001b[39;49m)\n",
+            "File \u001b[0;32m/mnt/batch/tasks/shared/LS_root/mounts/clusters/ksajazwi-cpu/code/Users/pro5d-classification-prolactinoma/src/modelling.py:197\u001b[0m, in \u001b[0;36mDeepModel_Trainer.train_model\u001b[0;34m(self, run_group, model_architecture, num_epochs, loss_module, test_model, cross_validation, project_name, batchsize_train_data, num_workers, lr, cross_validation_random_seeding, use_mri_images, use_tabular_data)\u001b[0m\n\u001b[1;32m    195\u001b[0m     \u001b[39mprint\u001b[39m(\u001b[39m\"\u001b[39m\u001b[39mNo Datatype selected\u001b[39m\u001b[39m\"\u001b[39m)\n\u001b[1;32m    196\u001b[0m     \u001b[39mraise\u001b[39;00m \u001b[39mValueError\u001b[39;00m\n\u001b[0;32m--> 197\u001b[0m data_labels \u001b[39m=\u001b[39m data_labels\u001b[39m.\u001b[39;49munsqueeze()\n\u001b[1;32m    198\u001b[0m \u001b[39mprint\u001b[39m(\u001b[39mtype\u001b[39m(preds[\u001b[39m0\u001b[39m]))\n\u001b[1;32m    199\u001b[0m \u001b[39mprint\u001b[39m(\u001b[39mtype\u001b[39m(data_labels[\u001b[39m0\u001b[39m]))\n",
+            "\u001b[0;31mTypeError\u001b[0m: unsqueeze() missing 1 required positional arguments: \"dim\""
+          ]
+        }
+      ],
+      "execution_count": 3,
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [],
+      "outputs": [],
+      "execution_count": null,
+      "metadata": {}
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "name": "python38-azureml",
+      "language": "python",
+      "display_name": "Python 3.8 - AzureML"
+    },
+    "language_info": {
+      "name": "python",
+      "version": "3.8.5",
+      "mimetype": "text/x-python",
+      "codemirror_mode": {
+        "name": "ipython",
+        "version": 3
+      },
+      "pygments_lexer": "ipython3",
+      "nbconvert_exporter": "python",
+      "file_extension": ".py"
+    },
+    "microsoft": {
+      "ms_spell_check": {
+        "ms_spell_check_language": "en"
+      }
+    },
+    "kernel_info": {
+      "name": "python38-azureml"
+    },
+    "nteract": {
+      "version": "nteract-front-end@1.0.0"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 2
+}

@@ -27,7 +27,7 @@ class ImagesDataset(Dataset):
         :param bool use_tabular_data: True if the tabular data is used
         """
         self.data = data
-        self.label = self.data.loc[:,["Patient_ID","Case_ID","Category"]]
+        self.label = self.data.loc[:,["Patient_ID","Case_ID","label"]]
         self.preproccessing = preproccessing
         self.augmentation = augmentation
         self.mri_type = mri_type
@@ -63,7 +63,7 @@ class ImagesDataset(Dataset):
             tab_data = np.nan
         
         case = self.data.iloc[index]["Case_ID"]
-        label = self.label.iloc[index]["Category"]
+        label = self.label.iloc[index]["label"]
         sample = {"case_id": case, "image": mri, "label": label,"tab_data":tab_data}
         return sample
 

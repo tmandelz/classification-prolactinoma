@@ -45,7 +45,6 @@ class Transformer:
     
     def select_roi(self,mri, new_size=(384, 384), crop_size= (112, 112, 6)):
         resize_transform = transforms.Resize(new_size)
-
         # Process each slice
         resized_slices = []
         for slice_idx in range(mri.shape[2]):
@@ -62,5 +61,11 @@ class Transformer:
             center[1]-crop_size[1]//2 : center[1]+crop_size[1]//2,
             center[2]-crop_size[2]//2 : center[2]+crop_size[2]//2
         ]
+        cropped_image = torch.tensor(cropped_image,dtype=float)
 
-        return cropped_image
+        pixels = cropped_image[cropped_image > 0]
+        mean = pixels.mean()
+        std  = pixels.std()
+        out = (cropped_image - mean)/std
+        return out
+    

@@ -98,7 +98,7 @@ class DeepModel_Trainer:
         run_group: str,
         model_architecture: str,
         num_epochs: int,
-        loss_module: nn = nn.CrossEntropyLoss(),
+        loss_module: nn = nn.BCELoss(),
         test_model: bool = False,
         cross_validation: bool = True,
         project_name: str = "deep_model_x",
@@ -107,7 +107,9 @@ class DeepModel_Trainer:
         lr: float = 1e-3,
         cross_validation_random_seeding=False,
         use_mri_images: bool=True,
-        use_tabular_data: bool= False
+        use_tabular_data: bool= False,
+        save_model:bool = False,
+        evaluate_test_set:bool = False
     ) -> None:
         """
         Jan
@@ -115,7 +117,7 @@ class DeepModel_Trainer:
         :param str run_group: Name of the run group (kfolds).
         :param str model_architecture: Modeltype (architectur) of the model
         :param int num_epochs: number of epochs to train
-        :param nn.CrossEntropyLoss loss_module: Loss used for the competition
+        :param nn.BCELoss loss_module: Loss used for the competition
         :param int test_model: If true, it only loops over the first train batch and it sets only one fold. -> For the overfitting test.
         :param int cross_validation: If true, creates 5 cross validation folds to loop over, else only one fold is used for training
         :param str project_name: Name of the project in wandb.
@@ -125,29 +127,34 @@ class DeepModel_Trainer:
         :param bool cross_validation_random_seeding: defines whether to use the same seed for each fold or to use different ones
         :param bool use_mri_images: True if the mri images is used
         :param bool use_tabular_data: True if the tabular data is used
+        :param bool save_model: True if model should be saved
+        :param bool evaluate_test_set: True if the testset should be evaluated
         """
         #TODO: rework and separate cv and evaluation from this whole function to subfunctions
         # train loop over folds
+        self.use_mri_images = use_mri_images
+        self.use_tabular_data = use_tabular_data
         if cross_validation:
             n_folds = 5
         else:
             n_folds = 1
         self.models = []
         for fold in tqdm(range(n_folds), unit="fold", desc="Fold-Iteration"):
+            self.fold = fold
             # set a different random seed for each fold to introduce some variance
             if cross_validation_random_seeding:
                 _set_seed(self.random_cv_seeds[fold])
 
             # setup a new wandb run for the fold -> fold runs are grouped by name
-            self.setup_wandb_run(
-                project_name,
-                run_group,
-                fold,
-                lr,
-                num_epochs,
-                model_architecture,
-                batchsize_train_data
-            )
+            # self.setup_wandb_run(
+            #     project_name,
+            #     run_group,
+            #     fold,
+            #     lr,
+            #     num_epochs,
+            #     model_architecture,
+            #     batchsize_train_data
+            # )
 
             # prepare the kfold and dataloaders
             self.data_model.prepare_data(fold)
@@ -171,20 +178,20 @@ class DeepModel_Trainer:
             batch_iter = 1
             for epoch in tqdm(range(num_epochs), unit="epoch", desc="Epoch-Iteration"):
                 loss_train = np.array([])
-                label_train_data = np.empty([])
+                label_train_data = np.array([])
                 pred_train_data = np.array([])
 
                 # train loop over batches
                 for batch in self.train_loader:
 
                     # calc gradient
-                    data_labels = batch["label"].to(device)
+                    data_labels = torch.tensor(batch["label"],dtype=torch.float).to(device)
                     if use_mri_images and use_tabular_data:
-                        data_inputs = batch["image"].to(device)
+                        data_inputs = batch["image"].to(device).float()
                         tab_data = batch["tab_data"].to(device)
                         preds = model(data_inputs,tab_data)
                     elif use_mri_images:
-                        data_inputs = batch["image"].to(device)
+                        data_inputs = batch["image"].to(device).float()
                         preds = model(data_inputs)
                     elif use_tabular_data:
                         tab_data = batch["tab_data"].to(device)
@@ -192,7 +199,7 @@ class DeepModel_Trainer:
                     else:
                         print("No Datatype selected")
                         raise ValueError
-                    
+                    preds = torch.sigmoid(preds).squeeze(1)
                     loss = loss_module(preds, data_labels)
 
                     optimizer.zero_grad()
@@ -201,20 +208,19 @@ class DeepModel_Trainer:
 
                     self.evaluation.per_batch(
                         batch_iter, epoch, loss)
-
                     # data for evaluation
                     label_train_data = np.concatenate(
-                        (label_train_data, data_labels.data.cpu().numpy()), axis=0
+                        (label_train_data, data_labels.data.cpu().numpy()),axis=0
                     )
-                    predict_train = torch.argmax(preds, 1).data.cpu().numpy()
+                    predict_train = torch.round(preds).data.cpu().numpy()
                     pred_train_data = np.concatenate(
-                        (pred_train_data, predict_train), axis=0
+                        (pred_train_data, predict_train),axis=0
                     )
                     loss_train = np.append(loss_train, loss.item())
 
                     # iter next batch
                     batch_iter += 1
-
+                    
                 # wandb per epoch
                 pred_val, label_val = self.predict(
                     model,
@@ -234,14 +240,19 @@ class DeepModel_Trainer:
 
             # wandb per model
             self.evaluation.per_model(
-                label_val, pred_val, self.data_model.val)
-
+                label_val, pred_val)
+            if evaluate_test_set:
+                pred_test, label_test = self.predict(
+                    model,
+                    self.test_loader,
+                )
+                self.evaluation.per_model(
+                    label_test, pred_test,eval_data="test")
             self.models.append(model)
-            self.run.finish()
-            self.model_fold5 = model
-            self._save_model(str(run_group+str(fold)))
-        # new model instance for a new k-fold
-        self.model_fold5 = model
+            #self.run.finish()
+            if save_model:
+                self.model_to_save= model
+                self._save_model(str(run_group+str(fold)))
 
     def predict(
         self,
@@ -259,22 +270,34 @@ class DeepModel_Trainer:
         :rtype: np.array, np.array
         """
         model.eval()
-        predictions = []
-        true_labels = []
+        predictions = np.array([])
+        true_labels = np.array([])
         with torch.no_grad():  # Deactivate gradients for the following code
             for batch in data_loader:
                 # Determine prediction of model
-                data_inputs = batch["image"].to(self.device)
-
-                preds = model(data_inputs)
+                data_labels = torch.tensor(batch["label"],dtype=torch.float).to(device)
+                if self.use_mri_images and self.use_tabular_data:
+                    data_inputs = batch["image"].to(device).float()
+                    tab_data = batch["tab_data"].to(device)
+                    preds = model(data_inputs,tab_data)
+                elif self.use_mri_images:
+                    data_inputs = batch["image"].to(device).float()
+                    preds = model(data_inputs)
+                elif self.use_tabular_data:
+                    tab_data = batch["tab_data"].to(device)
+                    preds = model(tab_data)
+                else:
+                    print("No Datatype selected")
+                    raise ValueError
+                preds = model(data_inputs).squeeze(1)
                 predictions = np.concatenate(
-                    (predictions, preds.data.cpu().numpy()), axis=0
+                    (predictions, torch.sigmoid(preds).data.cpu().numpy()),axis=0
                 )
 
                 
                 data_labels = batch["label"].to(self.device)
                 true_labels = np.concatenate(
-                    (true_labels, data_labels.data.cpu().numpy()), axis=0
+                    (true_labels, data_labels.data.cpu().numpy()),axis=0
                 )
         model.train()
         return predictions, true_labels
@@ -286,7 +309,8 @@ class DeepModel_Trainer:
         :param str submit_name: name of the model file
         """
         #TODO: rename and rework this function to a save model function. maybe leave submission but use an if statement to make it optional to submit something
-        path = f"./model_submit/{submit_name}.pth"
-        torch.save(self.model_fold5.state_dict(), path)
+        path = f"./models/saved_models/{submit_name}.pth"
+        torch.save(self.model_to_save.state_dict(), path)
         print(f"Saved model: {submit_name} to {path}")
+        "../"
 # %%
