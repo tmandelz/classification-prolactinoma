@@ -201,7 +201,7 @@ class DeepModel_Trainer:
                         raise ValueError
                     preds = torch.sigmoid(preds).squeeze(1)
                     loss = loss_module(preds, data_labels)
-
+                    print(preds)
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()

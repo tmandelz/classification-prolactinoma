@@ -27,23 +27,28 @@ class Transformer:
         self,
         data_augmentation_transformer: transforms.Compose,
         preprocessing: str,
+        med3d: bool =False
     ) -> None:
         """
         :param torchvision.transforms data_augmentation_transformer: transformation steps for data_augmentation
         :param str preprocessing: string which defines a preproccessing function
+        :param bool med3d: med3d needs a different input size.
         """
+        self.med3d = med3d
         self.data_augmentation_transformer = data_augmentation_transformer
 
         # determine preprocessing steps from presets
         if preprocessing == "standard":
             self.preprocessing =  self.standard
         elif preprocessing == "select_roi":
-            self.preprocessing =  self.select_roi
-
-    def standard(self,mri):
+            self.preprocessing = self.get_preprocessing_function_med3d(self.select_roi)
+        
+    @staticmethod
+    def standard(mri):
         return torch.tensor(mri)
     
-    def select_roi(self,mri, new_size=(384, 384), crop_size= (112, 112, 6)):
+    @staticmethod
+    def select_roi(mri, new_size=(384, 384), crop_size= (112, 112, 6)):
         resize_transform = transforms.Resize(new_size)
         # Process each slice
         resized_slices = []
@@ -67,5 +72,20 @@ class Transformer:
         mean = pixels.mean()
         std  = pixels.std()
         out = (cropped_image - mean)/std
-        return out
+        return out.float()
+    
+    
+    def get_preprocessing_function_med3d(self,preprocessing):
+        """
+        Returns the preprocessing function, wrapped or unwrapped based on the med3d flag.
+        """
+        def wrapper(mri,preprocessing = preprocessing):
+            processed_image = preprocessing(mri)
+            processed_image = torch.unsqueeze(processed_image, 0)
+            return processed_image
+
+        if self.med3d:
+            return wrapper
+        else:
+            return preprocessing
     

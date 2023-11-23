@@ -46,7 +46,12 @@ class ImagesDataset(Dataset):
         if self.use_mri_images:
             # get mri
             mri_case = self.data.iloc[index]["MRI_Case_ID"]
-            mri = self.load_mri(mri_case)
+            mri_type = self.mri_type
+            try:
+                mri = self.load_mri(mri_case,mri_type=mri_type)
+            except:
+                # if there is no fse mri try to use one without
+                mri = self.load_mri(mri_case,mri_type=mri_type.replace("_fse",""))
 
             # transform the picture
             mri = self.preproccessing(mri)
@@ -70,8 +75,8 @@ class ImagesDataset(Dataset):
     def __len__(self):
         return len(self.data)
     
-    def load_mri(self,mri_case):
-        path = f"./raw_data/nii_files/{self.mri_type}/{mri_case}.nii"
+    def load_mri(self,mri_case,mri_type):
+        path = f"./raw_data/nii_files/{mri_type}/{mri_case}.nii"
         return nib.load(path).get_fdata()
 
 class DataModule(pl.LightningDataModule):
