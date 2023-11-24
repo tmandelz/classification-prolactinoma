@@ -4,6 +4,7 @@ from torchvision import transforms
 import pytorch_lightning as pl
 import nibabel as nib
 import numpy as np
+import torch
 class ImagesDataset(Dataset):
     """
     Reads in an image, transforms pixel values, and serves
@@ -16,7 +17,10 @@ class ImagesDataset(Dataset):
         preproccessing = None,
         mri_type: str = "t2_tse_fs_cor",
         use_mri_images: bool=True,
-        use_tabular_data: bool= False
+        use_tabular_data: bool= False,
+        columns_tab_data:list = ["COR60","FSH","FT4","IGF1"],
+        mean_tab_data: float = None,
+        std_tab_data: float = None
     ):
         """
         :param pd.DataFrame x_df: links of the jpg
@@ -25,6 +29,9 @@ class ImagesDataset(Dataset):
         :param str mri_type: type of mri
         :param bool use_mri_images: True if the mri images is used
         :param bool use_tabular_data: True if the tabular data is used
+        :param list columns_tab_data: definies which tabular columns will be selected (only if use_tabular_data is True) 
+        :param float mean_tab_data
+        :param flot std_tab_data
         """
         self.data = data
         self.label = self.data.loc[:,["Patient_ID","Case_ID","label"]]
@@ -33,6 +40,9 @@ class ImagesDataset(Dataset):
         self.mri_type = mri_type
         self.use_mri_images = use_mri_images
         self.use_tabular_data = use_tabular_data
+        self.columns_tab_data = columns_tab_data
+        self.mean_tab_data = mean_tab_data
+        self.std_tab_data = std_tab_data
 
 
     def __getitem__(self, index: int) -> dict:
@@ -59,11 +69,11 @@ class ImagesDataset(Dataset):
             if self.augmentation != None:
                 self.augmentation(mri)
         else:
-            mri_case = np.nan
+            mri = np.nan
 
         if self.use_tabular_data:
-            # TODO include Tabular Data
-            tab_data = np.nan
+            tab_data = (self.data.loc[:,self.columns_tab_data].iloc[index].values - self.mean_tab_data)/self.std_tab_data
+            tab_data = torch.tensor(tab_data).float()
         else:
             tab_data = np.nan
         
@@ -87,8 +97,8 @@ class DataModule(pl.LightningDataModule):
         test_data_path: str = "./data/test_data.csv",
         mri_type: str = "t2_tse_fs_cor",
         use_mri_images: bool=True,
-        use_tabular_data: bool= False
-        
+        use_tabular_data: bool= False,
+        columns_tab_data:list = ["COR60","FSH","FT4","IGF1"]        
     ) -> None:
         """
         Jan
@@ -98,6 +108,8 @@ class DataModule(pl.LightningDataModule):
         :param str mri_type: type of mri
         :param bool use_mri_images: True if the mri images is used
         :param bool use_tabular_data: True if the tabular data is used
+        :param list columns_tab_data: definies which tabular columns will be selected (only if use_tabular_data is True) 
+
         """
         
         # load_data
@@ -110,20 +122,32 @@ class DataModule(pl.LightningDataModule):
         self.mri_type = mri_type
         self.use_mri_images = use_mri_images
         self.use_tabular_data = use_tabular_data
+        self.columns_tab_data = columns_tab_data
 
         
         self.test = ImagesDataset(
-            test_data, None,self.preproccessing,self.mri_type,self.use_mri_images,self.use_tabular_data)
+            test_data, None,self.preproccessing,self.mri_type,self.use_mri_images,self.use_tabular_data,columns_tab_data)
 
     def prepare_data(self, fold_number) -> None:
-
-        val_data = self.train_data.loc[self.train_data["fold"] == fold_number,:]
-        train_data = self.train_data.loc[self.train_data["fold"] != fold_number,:]
-
+        if fold_number !="test":
+            val_data = self.train_data.loc[self.train_data["fold"] == fold_number,:]
+            train_data = self.train_data.loc[self.train_data["fold"] != fold_number,:]
+        else:
+            train_data = self.train_data
+        if self.use_tabular_data:
+            mean_tab_data = train_data.loc[:,self.columns_tab_data].values.mean(axis=0)
+            std_tab_data = train_data.loc[:,self.columns_tab_data].values.std(axis=0)
+            self.test.mean_tab_data = mean_tab_data
+            self.test.std_tab_data = std_tab_data
+        else:
+            mean_tab_data = None
+            std_tab_data = None
+        if fold_number !="test":
+            self.val = ImagesDataset(
+                val_data,None,self.preproccessing,self.mri_type,self.use_mri_images,self.use_tabular_data,self.columns_tab_data,mean_tab_data,std_tab_data)
         self.train = ImagesDataset(
-            train_data,self.augmentation,self.preproccessing,self.mri_type,self.use_mri_images,self.use_tabular_data)
-        self.val = ImagesDataset(
-            val_data,None,self.preproccessing,self.mri_type,self.use_mri_images,self.use_tabular_data)
+            train_data,self.augmentation,self.preproccessing,self.mri_type,self.use_mri_images,self.use_tabular_data,self.columns_tab_data,mean_tab_data,std_tab_data)
+        
 
     def train_dataloader(self, batch_size: int = 128, num_workers: int = 16):
         """

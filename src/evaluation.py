@@ -38,6 +38,7 @@ class Evaluation:
         loss_val: float,
         pred_val: np.array,
         label_val: np.array,
+        eval_data: str
     ) -> None:
         """
         wandb log of different scores
@@ -48,13 +49,14 @@ class Evaluation:
         :param float loss_val: log loss of the validation
         :param np.array pred_val: prediction of the validation
         :param np.array label_val: labels of the validation
+        :paraam str eval_data: val or test
         """
         true_pred_val = np.round(pred_val)
 
         sensitivity,specificity,fpr,tpr,auc,conf_matrix = self.calc_metrics(label_val,true_pred_val,pred_val)
-        log_val = {'sensitivity_val': sensitivity,
-                   'specificity_val': specificity,
-                   'auc_val': auc}
+        log_val = {f'sensitivity_{eval_data}': sensitivity,
+                   f'specificity_{eval_data}': specificity,
+                   f'auc_{eval_data}': auc}
         
         true_pred_train = np.round(pred_train)
         sensitivity,specificity,fpr,tpr,auc,conf_matrix = self.calc_metrics(label_train,true_pred_train,pred_train)
@@ -62,7 +64,7 @@ class Evaluation:
                    'specificity_train': specificity,
                    'auc_train': auc}
 
-        log = {"epoch": epoch, "Loss train": loss_train, "Loss val": loss_val}
+        log = {"epoch": epoch, "Loss train": loss_train, f"Loss {eval_data}": loss_val}
         print({**log,**log_val,**log_train})
         # wandb.log({**log,**log_val,**log_train})
 

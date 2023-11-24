@@ -157,6 +157,8 @@ class DeepModel_Trainer:
             # )
 
             # prepare the kfold and dataloaders
+            if evaluate_test_set:
+                self.data_model.prepare_data("test")
             self.data_model.prepare_data(fold)
             self.train_loader = self.data_model.train_dataloader(
                 batchsize_train_data, num_workers
@@ -199,9 +201,10 @@ class DeepModel_Trainer:
                     else:
                         print("No Datatype selected")
                         raise ValueError
-                    preds = torch.sigmoid(preds).squeeze(1)
+                    preds = torch.sigmoid(preds)
+                    if self.use_mri_images:
+                        preds = preds.squeeze(1)
                     loss = loss_module(preds, data_labels)
-                    print(preds)
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
@@ -222,25 +225,44 @@ class DeepModel_Trainer:
                     batch_iter += 1
                     
                 # wandb per epoch
-                pred_val, label_val = self.predict(
-                    model,
-                    self.val_loader,
-                )
-                loss_val = loss_module(torch.tensor(
-                    pred_val), torch.tensor(label_val))
-                self.evaluation.per_epoch(
-                    epoch,
-                    loss_train.mean(),
-                    pred_train_data,
-                    label_train_data,
-                    loss_val,
-                    pred_val,
-                    label_val,
-                )
+                if evaluate_test_set:
+                    pred_test, label_test = self.predict(
+                        model,
+                        self.test_loader,
+                    )
+                    loss_test = loss_module(torch.tensor(
+                        pred_test), torch.tensor(label_test))
+                    self.evaluation.per_epoch(
+                        epoch,
+                        loss_train.mean(),
+                        pred_train_data,
+                        label_train_data,
+                        loss_test,
+                        pred_test,
+                        label_test,
+                        "test"
+                    )
+                
+                else:
+                    pred_val, label_val = self.predict(
+                        model,
+                        self.val_loader,
+                    )
+                    loss_val = loss_module(torch.tensor(
+                        pred_val), torch.tensor(label_val))
+                    self.evaluation.per_epoch(
+                        epoch,
+                        loss_train.mean(),
+                        pred_train_data,
+                        label_train_data,
+                        loss_val,
+                        pred_val,
+                        label_val,
+                        "val"
+                    )
 
             # wandb per model
-            self.evaluation.per_model(
-                label_val, pred_val)
+            
             if evaluate_test_set:
                 pred_test, label_test = self.predict(
                     model,
@@ -248,6 +270,9 @@ class DeepModel_Trainer:
                 )
                 self.evaluation.per_model(
                     label_test, pred_test,eval_data="test")
+            else:
+                self.evaluation.per_model(
+                label_val, pred_val)
             self.models.append(model)
             #self.run.finish()
             if save_model:
@@ -289,7 +314,8 @@ class DeepModel_Trainer:
                 else:
                     print("No Datatype selected")
                     raise ValueError
-                preds = model(data_inputs).squeeze(1)
+                if self.use_mri_images:
+                    preds = preds.squeeze(1)
                 predictions = np.concatenate(
                     (predictions, torch.sigmoid(preds).data.cpu().numpy()),axis=0
                 )
