@@ -1,6 +1,8 @@
 # %%
 from torchvision import transforms
 from torch import nn
+import torch
+import numpy as np
 # %%
 
 
@@ -24,129 +26,66 @@ class Transformer:
     def __init__(
         self,
         data_augmentation_transformer: transforms.Compose,
-        preprocessing_transformer: str,
-        pretrained_transformer: str,
+        preprocessing: str,
+        med3d: bool =False
     ) -> None:
         """
-        Initialises a Transformer class for our project.
-        this class uses presets for a transfer learning approaches and presets for preprocessing approaches.
-        it also uses a parameterized data augmentation set 
         :param torchvision.transforms data_augmentation_transformer: transformation steps for data_augmentation
-        :param str preprocessing_transformer: string which defines a preset for all our transformation steps (resizing etc.)
-        :param str pretrained_transformer: string which defines a preset for the pretrained transfer model settings
+        :param str preprocessing: string which defines a preproccessing function
+        :param bool med3d: med3d needs a different input size.
         """
-        self.pretrained_transformer = pretrained_transformer
-        self.preprocessing_transformer = preprocessing_transformer
+        self.med3d = med3d
         self.data_augmentation_transformer = data_augmentation_transformer
 
         # determine preprocessing steps from presets
-        if preprocessing_transformer == "standard":
-            self.preprocessing_transformer = transforms.Compose(
-                [
-                    transforms.Resize((224, 224), antialias=True),
-                ]
-            )
-        elif preprocessing_transformer == "overfitting":
-            self.preprocessing_transformer = transforms.Compose(
-                [
-                    transforms.Resize((20, 20), antialias=True),
-                ]
-            )
-        elif preprocessing_transformer == "model_specific":
-            self.preprocessing_transformer = transforms.Compose(
-                [
-                    None_Transform()
-                ]
-            )
+        if preprocessing == "standard":
+            self.preprocessing =  self.standard
+        elif preprocessing == "select_roi":
+            self.preprocessing = self.get_preprocessing_function_med3d(self.select_roi)
+        
+    @staticmethod
+    def standard(mri):
+        return torch.tensor(mri)
+    
+    @staticmethod
+    def select_roi(mri, new_size=(384, 384), crop_size= (112, 112, 6)):
+        resize_transform = transforms.Resize(new_size)
+        # Process each slice
+        resized_slices = []
+        for slice_idx in range(mri.shape[2]):
+            # Extract the slice and add a channel dimension
+            slice = mri[:, :, slice_idx]
+            slice = torch.tensor(slice).unsqueeze(0)  # Add a channel dimension
+            resized_slice = resize_transform(slice)
+            resized_slices.append(resized_slice.squeeze(0).numpy())
 
-        # determine transformation steps for pretrained Models presets
-        if pretrained_transformer == "efficientnet":
-            self.pretrained_transformer = transforms.Compose(
-                [
-                    transforms.Resize(
-                        (256, 256), antialias=True, interpolation=transforms.InterpolationMode.BICUBIC
-                    ),
-                    transforms.CenterCrop(224),
-                    transforms.Normalize(
-                        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                    ),
-                ]
-            )
-        elif pretrained_transformer == "resnet":
-            self.pretrained_transformer = transforms.Compose(
-                [
-                    transforms.Resize(
-                        (232, 232), antialias=True, interpolation=transforms.InterpolationMode.BILINEAR
-                    ),
-                    transforms.CenterCrop(224),
-                    transforms.Normalize(
-                        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                    ),
-                ]
-            )
-        elif pretrained_transformer == "mlp":
-            self.pretrained_transformer = transforms.Compose(
-                [
-                    transforms.Normalize(
-                        mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
-                ]
-            )
-        elif pretrained_transformer == "convnext":
-            self.pretrained_transformer = transforms.Compose(
-                [
-                    transforms.Resize(
-                        (236, 236), antialias=True, interpolation=transforms.InterpolationMode.BILINEAR
-                    ),
-                    transforms.CenterCrop(224),
-                    transforms.Normalize(
-                        mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-                ])
-        elif pretrained_transformer == "swin":
-            self.pretrained_transformer = transforms.Compose(
-                [
-                    transforms.Resize(
-                        (232, 232), antialias=True, interpolation=transforms.InterpolationMode.BICUBIC
-                    ),
-                    transforms.CenterCrop(224),
-                    transforms.Normalize(
-                        mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-                ])
-        elif pretrained_transformer == "inceptionv3":
-            self.pretrained_transformer = transforms.Compose(
-                [
-                    transforms.Resize(
-                        (342, 342), antialias=True, interpolation=transforms.InterpolationMode.BILINEAR
-                    ),
-                    transforms.CenterCrop(299),
-                    transforms.Normalize(
-                        mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-                ])
+        resized_image = np.stack(resized_slices, axis=2)
+        center = np.array(resized_image.shape) // 2
+        cropped_image = resized_image[
+            center[0]-crop_size[0]//2 : center[0]+crop_size[0]//2,
+            center[1]-crop_size[1]//2 : center[1]+crop_size[1]//2,
+            center[2]-crop_size[2]//2 : center[2]+crop_size[2]//2
+        ]
+        cropped_image = torch.tensor(cropped_image,dtype=float)
 
-    def getCompose(self, turn_off_to_tensor: bool = False) -> transforms.Compose:
+        pixels = cropped_image[cropped_image > 0]
+        mean = pixels.mean()
+        std  = pixels.std()
+        out = (cropped_image - mean)/std
+        return out.float()
+    
+    
+    def get_preprocessing_function_med3d(self,preprocessing):
         """
-        Returns a Composition of Preprocessing Transformations for different transfer learning and augmentation approaches
-        :param bool turn_off_to_tensor: don't use transforms.ToTensor() for certain augmentations
-        :return: transforms.Compose object representing a sequence of image transformations for the full preprocessing
+        Returns the preprocessing function, wrapped or unwrapped based on the med3d flag.
         """
-        # some augmentations, for example ColorJitter, do not accept a tensor, others do
-        # we eather first turn everything into a tensor or do it after the augmentation transformation
-        if turn_off_to_tensor:
-            first_trans = None_Transform()
-            sec_trans = transforms.ToTensor()
+        def wrapper(mri,preprocessing = preprocessing):
+            processed_image = preprocessing(mri)
+            processed_image = torch.unsqueeze(processed_image, 0)
+            return processed_image
+
+        if self.med3d:
+            return wrapper
         else:
-            first_trans = transforms.ToTensor()
-            sec_trans = None_Transform()
-        return transforms.Compose(
-            [
-                # add a to Tensor in front off all augmentations
-                first_trans,
-                # first execute the augmenation steps
-                self.data_augmentation_transformer,
-                # for special data augmentation methods
-                sec_trans,
-                # second execute the preprocessing steps
-                self.preprocessing_transformer,
-                # third execute the pretrained model step
-                self.pretrained_transformer,
-            ]
-        )
+            return preprocessing
+    
