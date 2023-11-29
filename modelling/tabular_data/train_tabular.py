@@ -61,7 +61,7 @@ def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame,
     :param dict wandb_additional_config: dictionary with additional wandb run parameters
     """
     # init the wandb run
-    run = setup_wandb_run(project_name="pro5d-classification-prolactinoma",
+    run = setup_wandb_run(project_name="tabular-data",
                           run_group=run_group,
                           fold=fold, model_architecture=model_architecture,
                           wandb_additional_config=wandb_additional_config,
