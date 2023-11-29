@@ -5,6 +5,7 @@ import pytorch_lightning as pl
 import nibabel as nib
 import numpy as np
 import torch
+
 class ImagesDataset(Dataset):
     """
     Reads in an image, transforms pixel values, and serves
@@ -89,12 +90,13 @@ class ImagesDataset(Dataset):
         path = f"./raw_data/nii_files/{mri_type}/{mri_case}.nii"
         return nib.load(path).get_fdata()
 
+
 class DataModule(pl.LightningDataModule):
     def __init__(
         self,
         transformer,
-        train_data_path: str = "./data/train_data.csv",
-        test_data_path: str = "./data/test_data.csv",
+        train_data_path: str = "./data/train/train_mri_data.csv",
+        test_data_path: str = "./data/test/test_data_pairs.csv",
         mri_type: str = "t2_tse_fs_cor",
         use_mri_images: bool=True,
         use_tabular_data: bool= False,
@@ -113,7 +115,10 @@ class DataModule(pl.LightningDataModule):
         """
         
         # load_data
-        self.train_data = pd.read_csv(train_data_path)
+        if type(train_data_path) == str:
+            self.train_data = pd.read_csv(train_data_path)
+        else:
+            self.train_data = train_data_path
         test_data = pd.read_csv(test_data_path)
         
         # prepare transforms
