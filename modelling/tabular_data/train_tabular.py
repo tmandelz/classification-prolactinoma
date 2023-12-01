@@ -45,7 +45,7 @@ def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame,
         X_test: pd.DataFrame, y_test: pd.DataFrame, fold: int, run_group: str = "Tab-Data",
         model_architecture: str = 'LogReg', verbose: bool = False,
         class_names: list = ['non-prolaktinom', 'prolaktinom'],
-        wandb_additional_config: dict = {}):
+        wandb_additional_config: dict = {}, learning_curve: bool = True, learning_curve_increase: int = 0):
     """
     Fits a model on data from a fold and evaluates on train and test set
     :param BaseEstimator model: Sklearn BaseEstimator or Implementation
@@ -86,8 +86,13 @@ def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame,
     X_train_all_folds = X_train_all_folds.drop('fold', axis=1)
 
     if verbose:
-        print(f"Shape of validation fold Fold: {data_fold.shape}")
+        print(f"Shape of validation fold: {data_fold.shape}")
         print(f"Shape of Trainset: {X_train_all_folds.shape}")
+
+    if learning_curve:
+        run.log({'train_set_increase': learning_curve_increase,
+                'train_set_size': len(X_train_all_folds)})
+
     # fit the model on train set
     model.fit(X_train_all_folds, y_train_all_folds)
     # evaluate on train set (all folds)
@@ -158,31 +163,19 @@ def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
 
     if eval_mode == 'train':
         # Log the train metrics to wandb
-        wandbrun.log({'accuracy-train': accuracy})
-        wandbrun.log({'precision-train': precision})
-        wandbrun.log({'recall-train': recall})
-        wandbrun.log({'f1score-train': f1score})
-        wandbrun.log({'sensitivity-train': sensitivity})
-        wandbrun.log({'specificity-train': specificity})
-        wandbrun.log({'auc-train': auc})
+        wandbrun.log({'accuracy-train': accuracy, 'precision-train': precision,
+                      'recall-train': recall, 'f1score-train': f1score,
+                      'sensitivity-train': sensitivity, 'specificity-train': specificity,
+                      'auc-train': auc})
     elif eval_mode == 'val':
         # Log the train metrics to wandb
-        wandbrun.log({'accuracy-val': accuracy})
-        wandbrun.log({'precision-val': precision})
-        wandbrun.log({'recall-val': recall})
-        wandbrun.log({'f1score-val': f1score})
-        wandbrun.log({'sensitivity-val': sensitivity})
-        wandbrun.log({'specificity-val': specificity})
-        wandbrun.log({'auc-val': auc})
+        wandbrun.log({'accuracy-val': accuracy, 'precision-val': precision, 'recall-val': recall,
+                      'f1score-val': f1score, 'sensitivity-val': sensitivity, 'specificity-val': specificity,
+                      'auc-val': auc})
     elif eval_mode == 'test':
         # Log the test metrics to wandb
-        wandbrun.log({'accuracy-test': accuracy})
-        wandbrun.log({'precision-test': precision})
-        wandbrun.log({'recall-test': recall})
-        wandbrun.log({'f1score-test': f1score})
-        wandbrun.log({'sensitivity-test': sensitivity})
-        wandbrun.log({'specificity-test': specificity})
-        wandbrun.log({'auc-test': auc})
+        wandbrun.log({'accuracy-test': accuracy, 'precision-test': precision, 'recall-test': recall, 'f1score-test': f1score,
+                      'sensitivity-test': sensitivity, 'specificity-test': specificity, 'auc-test': auc})
 
     if eval_mode != 'train':
         # Log the confusion matrix image to wandb
