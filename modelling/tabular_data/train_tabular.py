@@ -246,3 +246,19 @@ def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
             [log_data_rows, log_Y_true, log_Y_pred, correct_pred], axis=1)
         table = wandb.Table(dataframe=log_df)
         wandbrun.log({f"Qualitative-Results-{eval_mode}": table})
+
+        if hasattr(model, 'feature_importances_'):
+            # Get feature importance
+            data = pd.DataFrame({'Feature': model.feature_names_in_,
+                                 'Importance': model.feature_importances_})
+            # Sort the DataFrame by the 'Importance' column in descending order
+            data = data.sort_values(by='Importance', ascending=False)
+            # Create a bar plot
+            plt.figure(figsize=(12, 6))
+            sns.barplot(x='Importance', y='Feature', data=data,)
+            # Add labels and title
+            plt.xlabel('Importance')
+            plt.ylabel('Feature')
+            plt.title('Feature Importance')
+            wandbrun.log({f"feature-importance-{eval_mode}": wandb.Image(plt)})
+            plt.close()
