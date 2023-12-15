@@ -45,7 +45,9 @@ def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame,
         X_test: pd.DataFrame, y_test: pd.DataFrame, fold: int, run_group: str = "Tab-Data",
         model_architecture: str = 'LogReg', verbose: bool = False,
         class_names: list = ['non-prolaktinom', 'prolaktinom'],
-        wandb_additional_config: dict = {}, learning_curve: bool = True, learning_curve_increase: int = 0):
+        wandb_additional_config: dict = {}, learning_curve: bool = True,
+        learning_curve_increase: int = 0, perm_importance_yes: bool = False,
+        le: LabelEncoder = None):
     """
     Fits a model on data from a fold and evaluates on train and test set
     :param BaseEstimator model: Sklearn BaseEstimator or Implementation
@@ -95,13 +97,47 @@ def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame,
 
     # fit the model on train set
     model.fit(X_train_all_folds, y_train_all_folds)
+
     # evaluate on train set (all folds)
     evaluate_model(model, X_train_all_folds, y_train_all_folds,
                    run, class_names, 'train', verbose)
+
     if fold != "all":
-        # evaluate on val set (left out fold)
-        evaluate_model(model, data_fold, y_fold, run,
-                       class_names, 'val', verbose)
+        X_test, y_test = data_fold, y_fold
+        # # evaluate on val set (left out fold)
+        # evaluate_model(model, data_fold, y_fold, run,
+        #                class_names, 'val', verbose)
+
+    if perm_importance_yes:
+
+        # Evaluate the accuracy on the original test set
+        y_pred = model.predict(X_test)
+        y_pred_prob = model.predict_proba(X_test)[:, 1]
+                # encode labels for metrics and reports
+        label_encoder = LabelEncoder()
+        y_encoded = label_encoder.fit_transform(y_test)
+        original_auc = roc_auc_score(y_encoded, y_pred_prob)
+        perm_importance = []
+
+        for col in X_test.columns:
+            # Make a copy of the original data
+            X_test_permuted = X_test.copy()
+            X_test_permuted[col] = np.random.permutation(X_test_permuted[col])
+            # Make predictions on the permuted data
+            y_pred_permuted = model.predict(X_test_permuted)
+            y_pred_permuted_prob = model.predict_proba(X_test_permuted)[:, 1]
+            # Calculate accuracy on the permuted data
+            label_encoder = LabelEncoder()
+            y_encoded = label_encoder.fit_transform(y_test)
+            permuted_auc = roc_auc_score(y_encoded, y_pred_permuted_prob)
+            # Calculate the importance score
+            importance = original_auc - permuted_auc
+            perm_importance.append((col, importance))
+
+        # Sort and print the importance scores
+        perm_importance.sort(key=lambda x: x[1], reverse=True)
+        wandb.log({"permutation_importance_auc_" + str(col): importance for col, importance in perm_importance})
+
     # evaluate on test set
     evaluate_model(model, X_test, y_test, run, class_names, 'test', verbose)
     # finish the wandb run
