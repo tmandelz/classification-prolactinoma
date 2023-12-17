@@ -46,8 +46,7 @@ def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame,
         model_architecture: str = 'LogReg', verbose: bool = False,
         class_names: list = ['non-prolaktinom', 'prolaktinom'],
         wandb_additional_config: dict = {}, learning_curve: bool = True,
-        learning_curve_increase: int = 0, perm_importance_yes: bool = False,
-        le: LabelEncoder = None):
+        learning_curve_increase: int = 0, perm_importance_yes: bool = False):
     """
     Fits a model on data from a fold and evaluates on train and test set
     :param BaseEstimator model: Sklearn BaseEstimator or Implementation
@@ -92,15 +91,20 @@ def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame,
         print(f"Shape of Trainset: {X_train_all_folds.shape}")
 
     if learning_curve:
-        run.log({'train_set_increase': learning_curve_increase,
-                'train_set_size': len(X_train_all_folds)})
+        add_log = {'train_set_increase': learning_curve_increase,
+                   'train_set_size': len(X_train_all_folds)}
 
     # fit the model on train set
     model.fit(X_train_all_folds, y_train_all_folds)
 
-    # evaluate on train set (all folds)
-    evaluate_model(model, X_train_all_folds, y_train_all_folds,
-                   run, class_names, 'train', verbose)
+    if learning_curve:
+        # evaluate on train set (all folds)
+        evaluate_model(model, X_train_all_folds, y_train_all_folds,
+                       run, class_names, learning_curve_increase, 'train', verbose, add_log=add_log)
+    else:
+        # evaluate on train set (all folds)
+        evaluate_model(model, X_train_all_folds, y_train_all_folds,
+                       run, class_names, fold, 'train', verbose, add_log=add_log)
 
     if fold != "all":
         X_test, y_test = data_fold, y_fold
@@ -109,11 +113,10 @@ def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame,
         #                class_names, 'val', verbose)
 
     if perm_importance_yes:
-
-        # Evaluate the accuracy on the original test set
+        # Evaluate the auc on the original test set
         y_pred = model.predict(X_test)
         y_pred_prob = model.predict_proba(X_test)[:, 1]
-                # encode labels for metrics and reports
+        # encode labels for metrics and reports
         label_encoder = LabelEncoder()
         y_encoded = label_encoder.fit_transform(y_test)
         original_auc = roc_auc_score(y_encoded, y_pred_prob)
@@ -126,7 +129,7 @@ def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame,
             # Make predictions on the permuted data
             y_pred_permuted = model.predict(X_test_permuted)
             y_pred_permuted_prob = model.predict_proba(X_test_permuted)[:, 1]
-            # Calculate accuracy on the permuted data
+            # Calculate auc on the permuted data
             label_encoder = LabelEncoder()
             y_encoded = label_encoder.fit_transform(y_test)
             permuted_auc = roc_auc_score(y_encoded, y_pred_permuted_prob)
@@ -138,16 +141,24 @@ def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame,
         perm_importance.sort(key=lambda x: x[1], reverse=True)
         wandb.log({"permutation_importance_auc_" + str(col): importance for col, importance in perm_importance})
 
-    # evaluate on test set
-    evaluate_model(model, X_test, y_test, run, class_names, 'test', verbose)
+    if learning_curve:
+        # evaluate on test set
+        evaluate_model(model, X_test, y_test, run,
+                       class_names, learning_curve_increase, 'test', verbose, add_log=add_log)
+    else:
+        # evaluate on test set
+        evaluate_model(model, X_test, y_test, run,
+                       class_names, fold, 'test', verbose, add_log=add_log)
+
     # finish the wandb run
     run.finish()
     return model
 
 
 def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
-                   wandbrun: wandb.run, class_names: list, eval_mode: str = 'train',
-                   verbose: bool = False, class_names_cm: list = ['non-prolaktinom', 'prolaktinom']):
+                   wandbrun: wandb.run, class_names: list, fold, eval_mode: str = 'train',
+                   verbose: bool = False, class_names_cm: list = ['non-prolaktinom', 'prolaktinom'],
+                   add_log: dict = {}):
     """
     Fits a model on data from a fold and evaluates on train and test set
     :param BaseEstimator model: Sklearn BaseEstimator or Implementation
@@ -199,19 +210,20 @@ def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
 
     if eval_mode == 'train':
         # Log the train metrics to wandb
-        wandbrun.log({'accuracy-train': accuracy, 'precision-train': precision,
-                      'recall-train': recall, 'f1score-train': f1score,
-                      'sensitivity-train': sensitivity, 'specificity-train': specificity,
-                      'auc-train': auc})
+        wandb.log(add_log | {
+            'accuracy-train': accuracy, 'precision-train': precision,
+            'recall-train': recall, 'f1score-train': f1score,
+            'sensitivity-train': sensitivity, 'specificity-train': specificity,
+            'auc-train': auc}, step=fold)
     elif eval_mode == 'val':
         # Log the train metrics to wandb
-        wandbrun.log({'accuracy-val': accuracy, 'precision-val': precision, 'recall-val': recall,
-                      'f1score-val': f1score, 'sensitivity-val': sensitivity, 'specificity-val': specificity,
-                      'auc-val': auc})
+        wandb.log(add_log | {'accuracy-val': accuracy, 'precision-val': precision, 'recall-val': recall,
+                                'f1score-val': f1score, 'sensitivity-val': sensitivity, 'specificity-val': specificity,
+                                'auc-val': auc}, step=fold)
     elif eval_mode == 'test':
         # Log the test metrics to wandb
-        wandbrun.log({'accuracy-test': accuracy, 'precision-test': precision, 'recall-test': recall, 'f1score-test': f1score,
-                      'sensitivity-test': sensitivity, 'specificity-test': specificity, 'auc-test': auc})
+        wandb.log(add_log | {'accuracy-test': accuracy, 'precision-test': precision, 'recall-test': recall, 'f1score-test': f1score,
+                                'sensitivity-test': sensitivity, 'specificity-test': specificity, 'auc-test': auc}, step=fold)
 
     if eval_mode != 'train':
         # Log the confusion matrix image to wandb
@@ -221,7 +233,7 @@ def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
                     yticklabels=class_names_cm)
         plt.xlabel('Predicted Labels')
         plt.ylabel('True Labels')
-        wandbrun.log({f"confusion_matrix-{eval_mode}": wandb.Image(plt)})
+        wandb.log({f"confusion_matrix-{eval_mode}": wandb.Image(plt)})
         plt.close()
 
         # Log AUC Curve to wandb
@@ -251,7 +263,7 @@ def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
         plt.axvline(x=(1-0.7), color='g', linestyle='--',
                     label='specificity at 70%', alpha=0.3)
         plt.legend(loc="lower right")
-        wandbrun.log({f"roc_auc_score--{eval_mode}": wandb.Image(plt)})
+        wandb.log({f"roc_auc_score--{eval_mode}": wandb.Image(plt)})
         plt.close()
 
         # Log random sampled qualitative results to wandb
@@ -274,7 +286,7 @@ def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
         log_df = pd.concat(
             [log_data_rows, log_Y_true, log_Y_pred, correct_pred], axis=1)
         table = wandb.Table(dataframe=log_df)
-        wandbrun.log({f"Qualitative-Results-{eval_mode}": table})
+        wandb.log({f"Qualitative-Results-{eval_mode}": table})
 
         if hasattr(model, 'feature_importances_'):
             # Get feature importance
@@ -289,5 +301,5 @@ def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
             plt.xlabel('Importance')
             plt.ylabel('Feature')
             plt.title('Feature Importance')
-            wandbrun.log({f"feature-importance-{eval_mode}": wandb.Image(plt)})
+            wandb.log({f"feature-importance-{eval_mode}": wandb.Image(plt)})
             plt.close()
