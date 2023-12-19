@@ -1,6 +1,7 @@
 from sklearn.base import BaseEstimator
 from sklearn.metrics import accuracy_score, recall_score, f1_score, precision_score, classification_report, confusion_matrix, roc_curve, roc_auc_score
 from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import learning_curve
 import matplotlib.pyplot as plt
 import wandb
 import numpy as np
@@ -45,7 +46,7 @@ def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame,
         X_test: pd.DataFrame, y_test: pd.DataFrame, fold: int, run_group: str = "Tab-Data",
         model_architecture: str = 'LogReg', verbose: bool = False,
         class_names: list = ['non-prolaktinom', 'prolaktinom'],
-        wandb_additional_config: dict = {}, learning_curve: bool = True,
+        wandb_additional_config: dict = {}, learning_curve_yes: bool = True,
         learning_curve_increase: int = 0, perm_importance_yes: bool = False):
     """
     Fits a model on data from a fold and evaluates on train and test set
@@ -90,14 +91,21 @@ def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame,
         print(f"Shape of validation fold: {data_fold.shape}")
         print(f"Shape of Trainset: {X_train_all_folds.shape}")
 
-    if learning_curve:
+    if learning_curve_yes:
         add_log = {'train_set_increase': learning_curve_increase,
                    'train_set_size': len(X_train_all_folds)}
 
     # fit the model on train set
     model.fit(X_train_all_folds, y_train_all_folds)
 
-    if learning_curve:
+    if learning_curve_yes:
+        train_size_abs, train_scores, test_scores = learning_curve(model,X_train_all_folds,y_train_all_folds,scoring='roc_auc',train_sizes=[0.1,0.2,0.3,0.4,0.1,0.5,0.6,0.7,0.8,0.9,1])
+        for train_sizes, cv_train_scores, cv_test_scores in zip(train_size_abs, train_scores, test_scores):
+            # Log data to W&B
+            wandb.log({"learning_curve_train_auc": train_score for train_score in cv_train_scores}|
+                      {"learning_curve_val_auc": val_score for val_score in cv_test_scores}
+                      |{"learning_curve_train_size": train_sizes})
+        
         # evaluate on train set (all folds)
         evaluate_model(model, X_train_all_folds, y_train_all_folds,
                        run, class_names, learning_curve_increase, 'train', verbose, add_log=add_log)
@@ -108,9 +116,9 @@ def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame,
 
     if fold != "all":
         X_test, y_test = data_fold, y_fold
-        # # evaluate on val set (left out fold)
-        # evaluate_model(model, data_fold, y_fold, run,
-        #                class_names, 'val', verbose)
+        # evaluate on val set (left out fold)
+        evaluate_model(model, data_fold, y_fold, run,
+                       class_names, fold, 'val', verbose)
 
     if perm_importance_yes:
         # Evaluate the auc on the original test set
@@ -141,7 +149,7 @@ def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame,
         perm_importance.sort(key=lambda x: x[1], reverse=True)
         wandb.log({"permutation_importance_auc_" + str(col): importance for col, importance in perm_importance})
 
-    if learning_curve:
+    if learning_curve_yes:
         # evaluate on test set
         evaluate_model(model, X_test, y_test, run,
                        class_names, learning_curve_increase, 'test', verbose, add_log=add_log)
@@ -194,7 +202,7 @@ def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
     label_encoder = LabelEncoder()
     y_encoded = label_encoder.fit_transform(y_true)
     # calculate fpr and tpr as well as auc
-    fpr, tpr, thresholds = roc_curve(y_encoded, y_pred_prob)
+    fpr, tpr, thresholds = roc_curve(y_encoded, y_pred_prob,drop_intermediate=False)
     auc = roc_auc_score(y_encoded, y_pred_prob)
 
     # print the metrics and reports if verbose
@@ -214,16 +222,16 @@ def evaluate_model(model: BaseEstimator, X: pd.DataFrame, y_true: pd.DataFrame,
             'accuracy-train': accuracy, 'precision-train': precision,
             'recall-train': recall, 'f1score-train': f1score,
             'sensitivity-train': sensitivity, 'specificity-train': specificity,
-            'auc-train': auc}, step=fold)
+            'auc-train': auc})
     elif eval_mode == 'val':
         # Log the train metrics to wandb
         wandb.log(add_log | {'accuracy-val': accuracy, 'precision-val': precision, 'recall-val': recall,
-                                'f1score-val': f1score, 'sensitivity-val': sensitivity, 'specificity-val': specificity,
-                                'auc-val': auc}, step=fold)
+                             'f1score-val': f1score, 'sensitivity-val': sensitivity, 'specificity-val': specificity,
+                             'auc-val': auc})
     elif eval_mode == 'test':
         # Log the test metrics to wandb
         wandb.log(add_log | {'accuracy-test': accuracy, 'precision-test': precision, 'recall-test': recall, 'f1score-test': f1score,
-                                'sensitivity-test': sensitivity, 'specificity-test': specificity, 'auc-test': auc}, step=fold)
+                             'sensitivity-test': sensitivity, 'specificity-test': specificity, 'auc-test': auc})
 
     if eval_mode != 'train':
         # Log the confusion matrix image to wandb
