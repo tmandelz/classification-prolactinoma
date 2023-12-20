@@ -89,7 +89,7 @@ class DeepModel_Trainer:
                 "learning rate": lr,
                 "epochs": num_epochs,
                 "model architecture": model_architecture,
-                "batchsize": batchsize,
+                "batchsize": batchsize
             },
         )
 
@@ -98,7 +98,7 @@ class DeepModel_Trainer:
         run_group: str,
         model_architecture: str,
         num_epochs: int,
-        loss_module: nn = nn.BCELoss(),
+        loss_func: nn = nn.BCEWithLogitsLoss,
         test_model: bool = False,
         cross_validation: bool = True,
         project_name: str = "deep_model_x",
@@ -109,7 +109,9 @@ class DeepModel_Trainer:
         use_mri_images: bool=True,
         use_tabular_data: bool= False,
         save_model:bool = False,
-        evaluate_test_set:bool = False
+        evaluate_test_set:bool = False,
+        weight_loss = False,
+        weight_loss_decrease = 1
     ) -> None:
         """
         Jan
@@ -117,7 +119,7 @@ class DeepModel_Trainer:
         :param str run_group: Name of the run group (kfolds).
         :param str model_architecture: Modeltype (architectur) of the model
         :param int num_epochs: number of epochs to train
-        :param nn.BCELoss loss_module: Loss used for the competition
+        :param nn.BCELoss loss_func: Loss used for the competition
         :param int test_model: If true, it only loops over the first train batch and it sets only one fold. -> For the overfitting test.
         :param int cross_validation: If true, creates 5 cross validation folds to loop over, else only one fold is used for training
         :param str project_name: Name of the project in wandb.
@@ -129,6 +131,8 @@ class DeepModel_Trainer:
         :param bool use_tabular_data: True if the tabular data is used
         :param bool save_model: True if model should be saved
         :param bool evaluate_test_set: True if the testset should be evaluated
+        :param bool weight_loss: if True weight the loss
+        :param int weight_loss_decrease: devide the the weight_loss with this number
         """
         #TODO: rework and separate cv and evaluation from this whole function to subfunctions
         # train loop over folds
@@ -146,16 +150,16 @@ class DeepModel_Trainer:
                 _set_seed(self.random_cv_seeds[fold])
 
             # setup a new wandb run for the fold -> fold runs are grouped by name
-            # self.setup_wandb_run(
-            #     project_name,
-            #     run_group,
-            #     fold,
-            #     lr,
-            #     num_epochs,
-            #     model_architecture,
-            #     batchsize_train_data
-            # )
-
+            self.setup_wandb_run(
+                project_name,
+                run_group,
+                fold,
+                lr,
+                num_epochs,
+                model_architecture,
+                batchsize_train_data
+            )
+            wandb.log({"learning_curve_size":self.data_model.fix_train_size})
             # prepare the kfold and dataloaders
             if evaluate_test_set:
                 self.data_model.prepare_data("test")
@@ -173,6 +177,15 @@ class DeepModel_Trainer:
             model = self.model()
             optimizer = optim.Adam(model.parameters(), lr=lr)
 
+            if weight_loss:
+                y = self.data_model.train.label["label"].values
+                n0 = (y == 0).sum().item()
+                n1 = (y == 1).sum().item()
+                weight = torch.tensor([(n0/n1)/weight_loss_decrease], dtype=torch.float32).to(device)
+            else:
+                weight = torch.tensor([1], dtype=torch.float32).to(device)
+                
+            loss_module = loss_func(pos_weight=weight)
             # training mode
             model.train()
             model.to(device)
@@ -201,7 +214,6 @@ class DeepModel_Trainer:
                     else:
                         print("No Datatype selected")
                         raise ValueError
-                    preds = torch.sigmoid(preds)
                     if self.use_mri_images:
                         preds = preds.squeeze(1)
                     loss = loss_module(preds, data_labels)
@@ -209,6 +221,7 @@ class DeepModel_Trainer:
                     loss.backward()
                     optimizer.step()
 
+                    preds = torch.sigmoid(preds)
                     self.evaluation.per_batch(
                         batch_iter, epoch, loss)
                     # data for evaluation
@@ -231,7 +244,8 @@ class DeepModel_Trainer:
                         self.test_loader,
                     )
                     loss_test = loss_module(torch.tensor(
-                        pred_test), torch.tensor(label_test))
+                        pred_test).to(device), torch.tensor(label_test).to(device))
+                    pred_test = torch.sigmoid(torch.tensor(pred_test))
                     self.evaluation.per_epoch(
                         epoch,
                         loss_train.mean(),
@@ -249,7 +263,8 @@ class DeepModel_Trainer:
                         self.val_loader,
                     )
                     loss_val = loss_module(torch.tensor(
-                        pred_val), torch.tensor(label_val))
+                        pred_val).to(device), torch.tensor(label_val).to(device))
+                    pred_val = torch.sigmoid(torch.tensor(pred_val))
                     self.evaluation.per_epoch(
                         epoch,
                         loss_train.mean(),
@@ -268,13 +283,14 @@ class DeepModel_Trainer:
                     model,
                     self.test_loader,
                 )
+                pred_test = torch.sigmoid(torch.tensor(pred_test))
                 self.evaluation.per_model(
-                    label_test, pred_test,eval_data="test")
+                    label_test, pred_test.data.cpu().numpy(),eval_data="test")
             else:
                 self.evaluation.per_model(
-                label_val, pred_val)
+                label_val, pred_val.data.cpu().numpy())
             self.models.append(model)
-            #self.run.finish()
+            wandb.finish()
             if save_model:
                 self.model_to_save= model
                 self._save_model(str(run_group+str(fold)))
@@ -317,7 +333,7 @@ class DeepModel_Trainer:
                 if self.use_mri_images:
                     preds = preds.squeeze(1)
                 predictions = np.concatenate(
-                    (predictions, torch.sigmoid(preds).data.cpu().numpy()),axis=0
+                    (predictions, preds.data.cpu().numpy()),axis=0
                 )
 
                 

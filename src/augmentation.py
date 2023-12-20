@@ -42,24 +42,28 @@ class Transformer:
             self.preprocessing =  self.standard
         elif preprocessing == "select_roi":
             self.preprocessing = self.get_preprocessing_function_med3d(self.select_roi)
+        elif preprocessing == "select_roi_small_imsize":
+            self.preprocessing =  self.select_roi_small_im
+        elif preprocessing == "select_roi_small_im_resnet":
+            self.preprocessing = self.select_roi_small_im_resnet
         
     @staticmethod
     def standard(mri):
         return torch.tensor(mri)
     
     @staticmethod
-    def select_roi(mri, new_size=(384, 384), crop_size= (112, 112, 6)):
+    def select_roi(mri, new_size=(384, 384), crop_size= (6,112, 112)):
         resize_transform = transforms.Resize(new_size)
         # Process each slice
         resized_slices = []
-        for slice_idx in range(mri.shape[2]):
+        for slice_idx in range(mri.shape[0]):
             # Extract the slice and add a channel dimension
-            slice = mri[:, :, slice_idx]
+            slice = mri[slice_idx, :, :]
             slice = torch.tensor(slice).unsqueeze(0)  # Add a channel dimension
             resized_slice = resize_transform(slice)
             resized_slices.append(resized_slice.squeeze(0).numpy())
 
-        resized_image = np.stack(resized_slices, axis=2)
+        resized_image = np.stack(resized_slices, axis=0)
         center = np.array(resized_image.shape) // 2
         cropped_image = resized_image[
             center[0]-crop_size[0]//2 : center[0]+crop_size[0]//2,
@@ -74,7 +78,61 @@ class Transformer:
         out = (cropped_image - mean)/std
         return out.float()
     
+    @staticmethod
+    def select_roi_small_im(mri, new_size=(384, 384), crop_size= (6,112, 112)):
+        resize_transform = transforms.Resize(new_size)
+        # Process each slice
+        resized_slices = []
+        for slice_idx in range(mri.shape[0]):
+            # Extract the slice and add a channel dimension
+            slice = mri[slice_idx, :, :]
+            slice = torch.tensor(slice).unsqueeze(0)  # Add a channel dimension
+            resized_slice = resize_transform(slice)
+            resized_slices.append(resized_slice.squeeze(0).numpy())
+
+        resized_image = np.stack(resized_slices, axis=0)
+        center = np.array(resized_image.shape) // 2
+        cropped_image = resized_image[
+            center[0]-crop_size[0]//2 : center[0]+crop_size[0]//2,
+            center[1]-crop_size[1]//2 : center[1]+crop_size[1]//2,
+            center[2]-crop_size[2]//2 : center[2]+crop_size[2]//2
+        ]
+        cropped_image = torch.tensor(cropped_image,dtype=float)
+
+        pixels = cropped_image[cropped_image > 0]
+        mean = pixels.mean()
+        std  = pixels.std()
+        out = (cropped_image - mean)/std
+        out = out[::2,:,:]
+        return out.float()
     
+    @staticmethod
+    def select_roi_small_im_resnet(mri, new_size=(384, 384), crop_size= (6,112, 112)):
+        resize_transform = transforms.Resize(new_size)
+        # Process each slice
+        resized_slices = []
+        for slice_idx in range(mri.shape[0]):
+            # Extract the slice and add a channel dimension
+            slice = mri[slice_idx, :, :]
+            slice = torch.tensor(slice).unsqueeze(0)  # Add a channel dimension
+            resized_slice = resize_transform(slice)
+            resized_slices.append(resized_slice.squeeze(0).numpy())
+
+        resized_image = np.stack(resized_slices, axis=0)
+        center = np.array(resized_image.shape) // 2
+        cropped_image = resized_image[
+            center[0]-crop_size[0]//2 : center[0]+crop_size[0]//2,
+            center[1]-crop_size[1]//2 : center[1]+crop_size[1]//2,
+            center[2]-crop_size[2]//2 : center[2]+crop_size[2]//2
+        ]
+        cropped_image /= cropped_image.max()
+        cropped_image = torch.tensor(cropped_image,dtype=float)
+        cropped_image = cropped_image[::2,:,:]
+        cropped_image = transforms.Resize(224)(cropped_image)
+        out = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])(cropped_image)
+        return out
+
+
     def get_preprocessing_function_med3d(self,preprocessing):
         """
         Returns the preprocessing function, wrapped or unwrapped based on the med3d flag.

@@ -26,8 +26,8 @@ class Evaluation:
         :param int epoch: index of the epoch to log
         :param float loss_batch: loss of the batch for the trainset
         """
-        print({"index_batch": index_batch,"epoch": epoch, "loss batch": loss_batch})
-        #wandb.log({"index_batch": index_batch,"epoch": epoch, "loss batch": loss_batch})
+
+        wandb.log({"index_batch": index_batch,"epoch": epoch, "loss batch": loss_batch})
 
     def per_epoch(
         self,
@@ -65,8 +65,7 @@ class Evaluation:
                    'auc_train': auc}
 
         log = {"epoch": epoch, "Loss train": loss_train, f"Loss {eval_data}": loss_val}
-        print({**log,**log_val,**log_train})
-        # wandb.log({**log,**log_val,**log_train})
+        wandb.log({**log,**log_val,**log_train})
 
 
     def per_model(self, label_val, pred_val,eval_data:str = "eval") -> None:
@@ -79,12 +78,10 @@ class Evaluation:
         self.eval_data = eval_data
         self.true_pred = np.round(pred_val)
         sensitivity,specificity,fpr,tpr,auc,conf_matrix = self.calc_metrics(label_val,self.true_pred,pred_val)
-        print({f'sensitivity {eval_data}': sensitivity,
-                f'specificity {eval_data}': specificity,
-                f'auc {eval_data}': auc})
-        # wandb.log({'sensitivity': sensitivity,
-        #            'specificity': specificity,
-        #            'auc': auc})
+
+        wandb.log({'sensitivity': sensitivity,
+                   'specificity': specificity,
+                   'auc': auc})
         self.plot_roc_curve(fpr,tpr,auc)
         self.plot_conf_matrix(conf_matrix)
 
@@ -92,14 +89,15 @@ class Evaluation:
         index_fn = np.where((label_val == 1) & (self.true_pred==0))[0][:5]
         index_tp = np.where((label_val == 1) & (self.true_pred==1))[0][:5]
         index_tn = np.where((label_val == 0) & (self.true_pred==0))[0][:5]
-        print({f"index false positiv {eval_data}": index_fp,
-                   f"index false negativ {eval_data}": index_fn,
-                   f"index true positiv {eval_data}":index_tp,
-                   f"index true negativ {eval_data}": index_tn})
-        # wandb.log({"index false positiv": index_fp,
-        #            "index false negativ": index_fn,
-        #            "index true positiv":index_tp,
-        #            "index true negativ": index_tn})
+
+        wandb.log({"index false positiv": index_fp,
+                   "index false negativ": index_fn,
+                   "index true positiv":index_tp,
+                   "index true negativ": index_tn})
+        
+        data_pred = np.array([pred_val,label_val]).T
+        predictions = wandb.Table(columns=["prediction", "Ground_Truth"], data=data_pred)
+        wandb.log({"predictions":predictions})
 
     def calc_metrics(self,y_true,y_pred,y_pred_prob):
         conf_matrix = confusion_matrix(y_true, y_pred)
@@ -143,8 +141,7 @@ class Evaluation:
         plt.axvline(x=(1-0.7), color='g', linestyle='--',
                     label='specificity at 70%', alpha=0.3)
         plt.legend(loc="lower right")
-        plt.show()
-        #wandb.log({f"roc_auc_score {self.eval_data}": wandb.Image(plt)})
+        wandb.log({f"roc_auc_score {self.eval_data}": wandb.Image(plt)})
         plt.close()
 
     def plot_conf_matrix(self,conf_matrix):
@@ -154,8 +151,7 @@ class Evaluation:
                     yticklabels=["non prolactinoma","prolactinoma"])
         plt.xlabel('Predicted Labels')
         plt.ylabel('True Labels')
-        plt.show()
-        #wandb.log({f"confusion_matrix {self.eval_data}": wandb.Image(plt)})
+        wandb.log({f"confusion_matrix {self.eval_data}": wandb.Image(plt)})
         plt.close()
         
     def visualize_slices(self,index:list,fold,mri_type:str ="t1_tse_fs_cor" ,preprocess_slices=None):
@@ -175,7 +171,7 @@ class Evaluation:
         mri_list =[data.__getitem__(mri_index)["image"] for mri_index in index]
         if preprocess_slices !=None:
             mri_list_processed = list(map(preprocess_slices,mri_list))
-            n_slices = mri_list_processed[0].shape[2]
+            n_slices = mri_list_processed[0].shape[0]
         else:
             mri_list_processed = None
         cmap = plt.cm.winter
@@ -190,14 +186,14 @@ class Evaluation:
                 plt.imshow(mri_list[mri][:, :, slice_number], cmap='gray')
                 
             else:
-                starting_point = mri_list[mri].shape[2]//2 - n_slices//2
+                starting_point = mri_list[mri].shape[0]//2 - n_slices//2
                 fig, axes = plt.subplots(1, 2, figsize=(10, 5))  # Create a figure with 2 subplots
-                axes[0].imshow(mri_list[mri][:, :, slice_number], cmap='gray')
+                axes[0].imshow(mri_list[mri][slice_number, :, :], cmap='gray')
                 axes[0].set_title(f'Not Preprocessed')
                 if (starting_point <= slice_number) and (starting_point + n_slices > slice_number):
-                    axes[1].imshow(mri_list_processed[mri][:, :, slice_number-starting_point], cmap='gray')
+                    axes[1].imshow(mri_list_processed[mri][slice_number-starting_point, :, :], cmap='gray')
                     axes[1].set_title(f'Preprocessed')
             plt.show()
 
         
-        interact(show_slice, mri=(0, len(mri_list) - 1), slice_number=(0, mri_list[0].shape[2] - 1))
+        return interact(show_slice, mri=(0, len(mri_list) - 1), slice_number=(0, mri_list[0].shape[0] - 1))
