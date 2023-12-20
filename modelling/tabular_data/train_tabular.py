@@ -99,7 +99,7 @@ def fit(model: BaseEstimator, X_train: pd.DataFrame, y_train: pd.DataFrame,
     model.fit(X_train_all_folds, y_train_all_folds)
 
     if learning_curve_yes:
-        train_size_abs, train_scores, test_scores = learning_curve(model,X_train_all_folds,y_train_all_folds,scoring='roc_auc',train_sizes=[0.1,0.2,0.3,0.4,0.1,0.5,0.6,0.7,0.8,0.9,1])
+        train_size_abs, train_scores, test_scores = learning_curve(model,X_train_all_folds,y_train_all_folds,scoring='roc_auc',train_sizes=[0.1,0.2,0.3,0.4,0.1,0.5,0.6,0.7,0.8,0.9,1],shuffle=True,random_state=42)
         for train_sizes, cv_train_scores, cv_test_scores in zip(train_size_abs, train_scores, test_scores):
             # Log data to W&B
             wandb.log({"learning_curve_train_auc": train_score for train_score in cv_train_scores}|
