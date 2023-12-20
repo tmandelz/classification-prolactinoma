@@ -62,7 +62,7 @@ class ImagesDataset(Dataset):
                 mri = self.load_mri(mri_case,mri_type=mri_type)
             except:
                 # if there is no fse mri try to use one without
-                mri = self.load_mri(mri_case,mri_type=mri_type.replace("_fse",""))
+                mri = self.load_mri(mri_case,mri_type=mri_type.replace("_fs",""))
 
             # transform the picture
             mri = self.preproccessing(mri)
@@ -88,7 +88,7 @@ class ImagesDataset(Dataset):
     
     def load_mri(self,mri_case,mri_type):
         path = f"./raw_data/nii_files/{mri_type}/{mri_case}.nii"
-        return nib.load(path).get_fdata()
+        return np.array(nib.load(path).get_fdata()).transpose((2,0,1))
 
 
 class DataModule(pl.LightningDataModule):
@@ -97,10 +97,11 @@ class DataModule(pl.LightningDataModule):
         transformer,
         train_data_path: str = "./data/train/train_mri_data.csv",
         test_data_path: str = "./data/test/test_data_pairs.csv",
-        mri_type: str = "t2_tse_fs_cor",
+        mri_type: str = "t1_tse_fs_cor",
         use_mri_images: bool=True,
         use_tabular_data: bool= False,
-        columns_tab_data:list = ["COR60","FSH","FT4","IGF1"]        
+        columns_tab_data:list = ["COR60","FSH","FT4","IGF1"],
+        fix_train_size: int = None        
     ) -> None:
         """
         Jan
@@ -111,7 +112,7 @@ class DataModule(pl.LightningDataModule):
         :param bool use_mri_images: True if the mri images is used
         :param bool use_tabular_data: True if the tabular data is used
         :param list columns_tab_data: definies which tabular columns will be selected (only if use_tabular_data is True) 
-
+        :param int fix_train_size: if there is a value, the size is fixed to the certain number
         """
         
         # load_data
@@ -128,6 +129,7 @@ class DataModule(pl.LightningDataModule):
         self.use_mri_images = use_mri_images
         self.use_tabular_data = use_tabular_data
         self.columns_tab_data = columns_tab_data
+        self.fix_train_size = fix_train_size
 
         
         self.test = ImagesDataset(
@@ -139,6 +141,9 @@ class DataModule(pl.LightningDataModule):
             train_data = self.train_data.loc[self.train_data["fold"] != fold_number,:]
         else:
             train_data = self.train_data
+            
+        if self.fix_train_size != None:
+                train_data = train_data[:self.fix_train_size]
         if self.use_tabular_data:
             mean_tab_data = train_data.loc[:,self.columns_tab_data].values.mean(axis=0)
             std_tab_data = train_data.loc[:,self.columns_tab_data].values.std(axis=0)
@@ -150,6 +155,7 @@ class DataModule(pl.LightningDataModule):
         if fold_number !="test":
             self.val = ImagesDataset(
                 val_data,None,self.preproccessing,self.mri_type,self.use_mri_images,self.use_tabular_data,self.columns_tab_data,mean_tab_data,std_tab_data)
+        
         self.train = ImagesDataset(
             train_data,self.augmentation,self.preproccessing,self.mri_type,self.use_mri_images,self.use_tabular_data,self.columns_tab_data,mean_tab_data,std_tab_data)
         
