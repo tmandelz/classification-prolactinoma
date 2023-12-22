@@ -197,43 +197,59 @@ def _impute_rule_based(df_to_impute: pd.DataFrame):
         _impute_based_on_age, args=(['FT4', age_ranges_ft4]), axis=1)
 
     # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9206165/ - Table 1 - Median
-    age_ranges_igf1 = [(df_to_impute['Patient_age'].min(), 25, 265.00*0.131), (26, 30, 222*0.131), (31, 35, 183*0.131),
-                       (36, 40, 171*0.131), (41, 45,
-                                             148*0.131), (46, 50, 129*0.131),
-                       (51, 55, 129.5*0.131), (56, 60, 130*0.131), (61, 65, 129.5*0.131), (66, 70, 128*0.131), (71, 75, 123*0.131), (76, df_to_impute['Patient_age'].max(), 109*0.131)]
+    age_ranges_igf1 = [(df_to_impute['Patient_age'].min(), 25, 265.00*0.13), (26, 30, 222*0.13), (31, 35, 183*0.13),
+                       (36, 40, 171*0.13), (41, 45,
+                                             148*0.13), (46, 50, 129*0.13),
+                       (51, 55, 129.5*0.13), (56, 60, 130*0.13), (61, 65, 129.5*0.13), (66, 70, 128*0.13), (71, 75, 123*0.13), (76, df_to_impute['Patient_age'].max(), 109*0.13)]
     df_to_impute['IGF1'] = df_to_impute.apply(
         _impute_based_on_age, args=(['IGF1', age_ranges_igf1]), axis=1)
-
+    
     # regular value for cortisol is at least 550 nmol/l
     df_to_impute['COR'] = df_to_impute['COR'].fillna(550)
 
     # https://labosud.fr/wp-content/uploads/sites/7/2023/08/Verification_of_Roche_reference_ranges_for_serum_prolactin_in_children_adolescents_adults_and_the_elderly-2023-07-11-05-21.pdf - Table 2 - Median by age and gender
     age_gender_ranges_prol = [
         {'age_range': (df_to_impute['Patient_age'].min(
-        ), 9), 'gender': 'male', 'imputation_value': 194.8},
-        {'age_range': (10, 12), 'gender': 'male', 'imputation_value': 273.9},
-        {'age_range': (13, 16), 'gender': 'male', 'imputation_value': 352.6},
-        {'age_range': (17, 19), 'gender': 'male', 'imputation_value': 397.},
-        {'age_range': (20, 30), 'gender': 'male', 'imputation_value': 356.5},
-        {'age_range': (31, 40), 'gender': 'male', 'imputation_value': 325.4},
-        {'age_range': (41, 50), 'gender': 'male', 'imputation_value': 292.9},
-        {'age_range': (51, 60), 'gender': 'male', 'imputation_value': 272.4},
-        {'age_range': (61, 70), 'gender': 'male', 'imputation_value': 227.9},
+        ), 9), 'gender': 'female', 'imputation_value': 194.8 * 0.048},
+        {'age_range': (10, 12), 'gender': 'female',
+         'imputation_value': 273.9 * 0.048},
+        {'age_range': (13, 16), 'gender': 'female',
+         'imputation_value': 352.6 * 0.048},
+        {'age_range': (17, 19), 'gender': 'female',
+         'imputation_value': 397. * 0.048},
+        {'age_range': (20, 30), 'gender': 'female',
+         'imputation_value': 356.5 * 0.048},
+        {'age_range': (31, 40), 'gender': 'female',
+         'imputation_value': 325.4 * 0.048},
+        {'age_range': (41, 50), 'gender': 'female',
+         'imputation_value': 292.9 * 0.048},
+        {'age_range': (51, 60), 'gender': 'female',
+         'imputation_value': 272.4 * 0.048},
+        {'age_range': (61, 70), 'gender': 'female',
+         'imputation_value': 227.9 * 0.048},
         {'age_range': (71, df_to_impute['Patient_age'].max(
-        )), 'gender': 'male', 'imputation_value': 250.3},
+        )), 'gender': 'female', 'imputation_value': 250.3 * 0.048},
 
         {'age_range': (df_to_impute['Patient_age'].min(
-        ), 10), 'gender': 'female', 'imputation_value': 211.2},
-        {'age_range': (11, 13), 'gender': 'female', 'imputation_value': 211.2},
-        {'age_range': (14, 16), 'gender': 'female', 'imputation_value': 262.0},
-        {'age_range': (17, 19), 'gender': 'female', 'imputation_value': 283.8},
-        {'age_range': (20, 30), 'gender': 'female', 'imputation_value': 291.7},
-        {'age_range': (31, 40), 'gender': 'female', 'imputation_value': 260.5},
-        {'age_range': (41, 50), 'gender': 'female', 'imputation_value': 252.5},
-        {'age_range': (51, 60), 'gender': 'female', 'imputation_value': 241.},
-        {'age_range': (61, 70), 'gender': 'female', 'imputation_value': 232.2},
+        ), 10), 'gender': 'male', 'imputation_value': 211.2 * 0.048},
+        {'age_range': (11, 13), 'gender': 'male',
+         'imputation_value': 211.2 * 0.048},
+        {'age_range': (14, 16), 'gender': 'male',
+         'imputation_value': 262.0 * 0.048},
+        {'age_range': (17, 19), 'gender': 'male',
+         'imputation_value': 283.8 * 0.048},
+        {'age_range': (20, 30), 'gender': 'male',
+         'imputation_value': 291.7 * 0.048},
+        {'age_range': (31, 40), 'gender': 'male',
+         'imputation_value': 260.5 * 0.048},
+        {'age_range': (41, 50), 'gender': 'male',
+         'imputation_value': 252.5 * 0.048},
+        {'age_range': (51, 60), 'gender': 'male',
+         'imputation_value': 241. * 0.048},
+        {'age_range': (61, 70), 'gender': 'male',
+         'imputation_value': 232.2 * 0.048},
         {'age_range': (71, df_to_impute['Patient_age'].max(
-        )), 'gender': 'female', 'imputation_value': 252.4},
+        )), 'gender': 'male', 'imputation_value': 252.4 * 0.048},
     ]
 
     df_to_impute['PROL'] = df_to_impute.apply(
