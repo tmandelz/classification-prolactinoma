@@ -1,12 +1,8 @@
-# Default Project
-
-This project is a part of the [XYZ Group](https://deep_model.ch) at [Data Science FHNW](https://www.fhnw.ch/en/degree-programmes/engineering/bsc-data-science).
-
-Repo Description
-
-## Project Status: In Progress
+## Project Status: Finished
 
 ## Project Intro/Objective
+
+This project, conducted at the University of Applied Sciences and Arts Northwestern Switzerland FHNW, School of Engineering, in Brugg-Windisch, represents a pioneering effort in utilizing machine learning (ML) and deep learning (DL) techniques for the early detection of prolactinomas. Spearheaded by Jan Zwicky, Thomas Mandelz, and guided by Professors Suter and Perruchoud, the study collaborates closely with medical professionals from Kantonsspital Aarau, Dr. Tristan Struja and Dr. Felice Burn.
 
 ## Folderoverview
 
