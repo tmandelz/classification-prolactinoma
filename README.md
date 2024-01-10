@@ -7,7 +7,25 @@ Repo Description
 ## Project Status: In Progress
 
 ## Project Intro/Objective
-## Filepfade 
+
+## Folderoverview
+
+| Folder                          | Subfolders                                  | Description                                                  |
+|---------------------------------|---------------------------------------------|--------------------------------------------------------------|
+| data                            | test, train                                 | Data for testing and training                                |
+| eda                             |                                             | Exploratory Data Analysis (EDA) files, Data processing and partitioning files                  |
+| MedicalNet                      | models, utils                               | MedicalNet (Med3d) library components: models and utility functions  |
+| modelling                       | combined, mri_data, tabular_data            | Modelling-related folders: combined models, MRI data, tabular data  |
+|                                 |   - mri_data: results_augmented_weighted   | MRI data and augmented weighted results                      |
+|                                 |   - tabular_data:                          |  tabular data machine learning pipelines                                                            |
+|                                 |       - images:                            | Images for tabular data analysis: fn, fp, tn, tp            |
+|                                 |       - results_csv                        | CSV results for tabular data analysis                       |
+| models                          | saved_models                                | Saved machine learning models                               |
+| NODE                            |                                             | NODE deep learning components       |
+| raw_data                        | nii_files                                   | raw data for tab and NII files                               |
+| src                             |                                             | Source code for deep learning pipeline and related files                                |
+
+
 
 ### Methods Used
 
