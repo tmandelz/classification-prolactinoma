@@ -26,7 +26,7 @@ This project, conducted at the University of Applied Sciences and Arts Northwest
 ### Methods Used
 
 * Deep Learning
-* ...
+* Machine Learning
 
 ### Technologies
 
@@ -35,12 +35,7 @@ This project, conducted at the University of Applied Sciences and Arts Northwest
 * wandb
 * numpy
 * pandas
-* ...
-
-## Featured Files
-
-* To use the best Model with some demo images, use this notebook: [Demo Model Notebook for the best model](demo/demo_model.ipynb)
-* ...
+* Azure Machine Learning
 
 ## Getting Started
 
@@ -74,4 +69,3 @@ This project, conducted at the University of Applied Sciences and Arts Northwest
 
 * **[Thomas Mandelz](https://github.com/tmandelz)**
 * **[Jan Zwicky](https://github.com/swiggy123)**
-* ...
